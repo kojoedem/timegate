@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clocking System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        button {
+            margin: 10px 0;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #response, #clock-time {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Clocking System</h1>
+    <button onclick="clockIn()">Clock In</button>
+    <button onclick="startBreak()">Start Break</button>
+    <button onclick="endBreak()">End Break</button>
+    <button onclick="clockOut()">Clock Out</button>
+
+    <div id="clock-time">
+        <strong>Elapsed Time:</strong>
+        <p id="elapsed-time">Not clocked in yet.</p>
+    </div>
+
+    <div id="response">
+        <strong>Response:</strong>
+        <p id="response-text">No actions yet.</p>
+    </div>
+
+    <script>
+        const apiUrl = "http://127.0.0.1:8000/api/attendance/";
+        let clockInTime = null; // To store the clock-in time
+
+        async function makeRequest(action, body = {}) {
+            const token = prompt("Enter your authentication token:");
+            if (!token) {
+                alert("Authentication token is required!");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiUrl}${action}/`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Token ${token}`
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+                document.getElementById("response-text").innerText = JSON.stringify(data, null, 2);
+
+                // If the action is clock_in and successful, store the clock-in time
+                if (action === "geolocation-clock-in" && response.ok) {
+                    clockInTime = new Date(); // Set the current time as clock-in time
+                    startClockTimer();
+                }
+            } catch (error) {
+                document.getElementById("response-text").innerText = "Error: " + error.message;
+            }
+        }
+
+        function clockIn() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(pos) {
+                    makeRequest("geolocation-clock-in", {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude
+                    });
+                }, function(err) {
+                    alert("Unable to get location: " + err.message);
+                });
+            } else {
+                alert("Geolocation not supported");
+            }
+        }
+
+        function startBreak() {
+            makeRequest("start_break");
+        }
+
+        function endBreak() {
+            makeRequest("end_break");
+        }
+
+        function clockOut() {
+            makeRequest("clock_out");
+            clockInTime = null; // Reset clock-in time
+            document.getElementById("elapsed-time").innerText = "Not clocked in yet.";
+        }
+
+        function startClockTimer() {
+            if (!clockInTime) return;
+
+            function updateElapsedTime() {
+                if (!clockInTime) return;
+
+                const now = new Date();
+                const elapsedMilliseconds = now - clockInTime;
+                const hours = Math.floor(elapsedMilliseconds / (1000 * 60 * 60));
+                const minutes = Math.floor((elapsedMilliseconds % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((elapsedMilliseconds % (1000 * 60)) / 1000);
+
+                document.getElementById("elapsed-time").innerText = `${hours}h ${minutes}m ${seconds}s`;
+            }
+
+            // Update the elapsed time every second
+            setInterval(updateElapsedTime, 1000);
+        }
+    </script>
+</body>
+</html>

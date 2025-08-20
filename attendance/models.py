@@ -1,6 +1,6 @@
 
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.utils.timezone import now
 
 class OfficeLocation(models.Model):
@@ -56,3 +56,15 @@ class Attendance(models.Model):
     @property
     def on_break(self):
         return self.break_start is not None and self.break_end is None
+
+
+class GroupTimePolicy(models.Model):
+    group = models.OneToOneField(Group, on_delete=models.CASCADE, related_name='time_policy')
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    class Meta:
+        verbose_name_plural = "Group Time Policies"
+
+    def __str__(self):
+        return f"Time policy for {self.group.name}"

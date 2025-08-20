@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.utils.timezone import now
+from unittest.mock import patch
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
 from rest_framework import status
@@ -51,12 +52,28 @@ class AttendanceAPITests(APITestCase):
         response = self.client.post('/api/break-end/')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_clock_out_success(self):
+    @patch('attendance.views.verify_user_face')
+    def test_clock_out_success(self, mock_verify_face):
+        # Configure the mock to simulate successful face verification
+        mock_verify_face.return_value = (True, "Face verified.")
+
         Attendance.objects.create(user=self.user, clock_in=now())
-        data = {'latitude': 5.6037, 'longitude': -0.1870}
-        response = self.client.post('/api/clock-out/', data)
+
+        # We need to send a dummy face capture to pass the serializer
+        dummy_face_capture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        data = {
+            'latitude': 5.6037,
+            'longitude': -0.1870,
+            'face_capture': dummy_face_capture
+        }
+
+        response = self.client.post('/api/clock-out/', data, format='json')
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(Attendance.objects.get().clock_out)
+
+        # Check that the token was deleted
+        self.assertFalse(Token.objects.filter(user=self.user).exists())
 
     def test_clock_out_not_clocked_in(self):
         data = {'latitude': 5.6037, 'longitude': -0.1870}

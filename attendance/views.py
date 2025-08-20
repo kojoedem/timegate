@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status, permissions
 from rest_framework.authtoken.models import Token
 
-from .models import Attendance, OfficeLocation, AllowedIP, Profile
+from .models import Attendance, OfficeLocation, AllowedIP, Profile, GroupTimePolicy
 from .serializers import AttendActionSerializer, AttendanceSerializer
 
 
@@ -50,6 +50,55 @@ def location_allowed(request, lat=None, lon=None):
 def get_open_attendance(user):
     return Attendance.objects.filter(user=user, clock_out__isnull=True).order_by("-clock_in").first()
 
+
+def verify_user_face(user, image_to_verify):
+    try:
+        profile = user.profile
+        if not profile.reference_image or not hasattr(profile.reference_image, 'path'):
+            return False, "No reference image for user."
+    except Profile.DoesNotExist:
+        return False, "No profile for user."
+
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+    # 1. "Train" on the user's reference image
+    image_path = profile.reference_image.path
+    ref_img = cv2.imread(image_path)
+    if ref_img is None:
+        return False, "Could not read reference image file."
+    gray_ref_img = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
+
+    ref_faces = face_cascade.detectMultiScale(gray_ref_img, 1.1, 5)
+    if len(ref_faces) == 0:
+        return False, "Could not find face in reference image."
+
+    (x, y, w, h) = ref_faces[0]
+    face_to_train = gray_ref_img[y:y+h, x:x+w]
+
+    recognizer = cv2.face.LBPHFaceRecognizer_create()
+    recognizer.train([face_to_train], np.array([user.id]))
+
+    # 2. Predict on the new image
+    uploaded_img_data = image_to_verify.read()
+    np_arr = np.frombuffer(uploaded_img_data, np.uint8)
+    uploaded_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    gray_uploaded_img = cv2.cvtColor(uploaded_img, cv2.COLOR_BGR2GRAY)
+
+    uploaded_faces = face_cascade.detectMultiScale(gray_uploaded_img, 1.1, 5)
+    if len(uploaded_faces) == 0:
+        return False, "No face detected in provided image."
+
+    (x, y, w, h) = uploaded_faces[0]
+    label, confidence = recognizer.predict(gray_uploaded_img[y:y+h, x:x+w])
+
+    # 3. Check confidence
+    CONFIDENCE_THRESHOLD = 85
+    if label == user.id and confidence < CONFIDENCE_THRESHOLD:
+        return True, "Face verified."
+    else:
+        return False, f"Face does not match. Confidence: {confidence}"
+
+
 class ClockInView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -58,6 +107,21 @@ class ClockInView(APIView):
         serializer.is_valid(raise_exception=True)
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
+
+        # Check group-based time policy
+        user = request.user
+        current_time = now().time()
+        user_groups = user.groups.all()
+
+        if user_groups:
+            group = user_groups.first()
+            if hasattr(group, 'time_policy'):
+                policy = group.time_policy
+                if not (policy.start_time <= current_time <= policy.end_time):
+                    return Response(
+                        {"detail": f"Clock-in denied. Your group can only clock in between {policy.start_time.strftime('%H:%M')} and {policy.end_time.strftime('%H:%M')}."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
 
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
@@ -109,24 +173,37 @@ class ClockOutView(APIView):
         if not att:
             return Response({"detail": "No active session to clock out."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Optionally enforce location on clock-out too:
         serializer = AttendActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
+        face_capture = serializer.validated_data.get("face_capture")
 
+        # Face verification
+        if not face_capture:
+            return Response({"detail": "Face capture is required for clock-out."}, status=status.HTTP_400_BAD_REQUEST)
+
+        verified, reason = verify_user_face(request.user, face_capture)
+        if not verified:
+            return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Location check
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
             return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
 
         att.clock_out = now()
 
-        # compute total seconds worked, subtracting break if present
+        # Compute total seconds worked
         total = int((att.clock_out - att.clock_in).total_seconds())
         if att.break_start and att.break_end and att.break_end > att.break_start:
             total -= int((att.break_end - att.break_start).total_seconds())
         att.total_seconds = max(total, 0)
         att.save()
+
+        # Invalidate token to log out
+        request.user.auth_token.delete()
+
         return Response(AttendanceSerializer(att).data)
 
 from django.shortcuts import render, redirect

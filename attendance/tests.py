@@ -1,3 +1,4 @@
+import datetime
 from django.contrib.auth.models import User
 from django.utils.timezone import now
 from unittest.mock import patch
@@ -85,3 +86,43 @@ class AttendanceAPITests(APITestCase):
         response = self.client.get('/api/today/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['user'], self.user.id)
+
+    def test_admin_dashboard_csv_export(self):
+        # Make user a staff member to access the dashboard
+        self.user.is_staff = True
+        self.user.save()
+
+        # Log in the staff user for the web view.
+        # Note: APITestCase client doesn't handle sessions well for non-API views.
+        # For a simple GET this is fine, but for POST we might need force_login.
+        # However, the view is simple, so this should work.
+        self.client.login(username='testuser', password='testpassword')
+
+        # Create some attendance data
+        clock_in_time = now()
+        clock_out_time = clock_in_time + datetime.timedelta(hours=8)
+        Attendance.objects.create(
+            user=self.user,
+            clock_in=clock_in_time,
+            clock_out=clock_out_time,
+            total_seconds=8*3600,
+            date=clock_in_time.date()
+        )
+
+        start_date = now().date()
+        end_date = now().date()
+
+        response = self.client.post('/admin-dashboard/', {
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'end_date': end_date.strftime('%Y-%m-%d')
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        self.assertIn('attachment; filename=', response['Content-Disposition'])
+
+        # Check the content of the CSV
+        content = response.content.decode('utf-8')
+        self.assertIn('User,Date,Clock In,Clock Out,Total Hours', content)
+        self.assertIn(self.user.username, content)
+        self.assertIn('8.0', content) # Check for the calculated hours

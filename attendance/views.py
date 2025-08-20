@@ -208,8 +208,11 @@ class ClockOutView(APIView):
 
 from django.shortcuts import render, redirect
 from django.views import View
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
+from django.http import HttpResponse
+import csv
+import datetime
 from .forms import UserRegistrationForm
 
 
@@ -328,3 +331,56 @@ class FaceLoginView(APIView):
                 return Response({"detail": "Identified user not found."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({"detail": "Could not identify face."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminDashboardView(UserPassesTestMixin, View):
+    def test_func(self):
+        return self.request.user.is_staff
+
+    def get(self, request):
+        # Get users who are currently clocked in and not on break
+        clocked_in_users = Attendance.objects.filter(clock_out__isnull=True, break_start__isnull=True).select_related('user')
+
+        # Get users who are currently on break
+        on_break_users = Attendance.objects.filter(break_start__isnull=False, break_end__isnull=True).select_related('user')
+
+        context = {
+            'clocked_in_users': clocked_in_users,
+            'on_break_users': on_break_users,
+            'total_users': User.objects.count(),
+            'total_clocked_in': clocked_in_users.count(),
+            'total_on_break': on_break_users.count(),
+        }
+        return render(request, 'attendance/admin_dashboard.html', context)
+
+    def post(self, request):
+        start_date_str = request.POST.get('start_date')
+        end_date_str = request.POST.get('end_date')
+
+        if not start_date_str or not end_date_str:
+            # Handle error: dates not provided
+            messages.error(request, "Please provide both a start and end date.")
+            return redirect('admin_dashboard')
+
+        start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
+
+        attendances = Attendance.objects.filter(date__range=[start_date, end_date]).order_by('user', 'date')
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="attendance_report_{start_date_str}_to_{end_date_str}.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow(['User', 'Date', 'Clock In', 'Clock Out', 'Total Hours'])
+
+        for att in attendances:
+            total_hours = round(att.total_seconds / 3600, 2) if att.total_seconds else 0
+            writer.writerow([
+                att.user.username,
+                att.date,
+                att.clock_in.strftime('%Y-%m-%d %H:%M:%S') if att.clock_in else '',
+                att.clock_out.strftime('%Y-%m-%d %H:%M:%S') if att.clock_out else '',
+                total_hours
+            ])
+
+        return response

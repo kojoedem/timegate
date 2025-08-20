@@ -1,6 +1,7 @@
 import datetime
 from django.contrib.auth.models import User
 from django.utils.timezone import now
+from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import patch
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
@@ -126,3 +127,39 @@ class AttendanceAPITests(APITestCase):
         self.assertIn('User,Date,Clock In,Clock Out,Total Hours', content)
         self.assertIn(self.user.username, content)
         self.assertIn('8.0', content) # Check for the calculated hours
+
+    @patch('attendance.forms.find_matching_face')
+    def test_registration_duplicate_face(self, mock_find_face):
+        # Scenario 1: Duplicate face is found
+        mock_find_face.return_value = (1, 0.5, "Match found.") # Simulate finding a match
+
+        # Create a tiny, valid PNG image for upload
+        png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDAT\x08\xd7c`\x00\x00\x00\x02\x00\x01\xe2!\xbc\x33\x00\x00\x00\x00IEND\xaeB`\x82'
+        dummy_image = SimpleUploadedFile("face.png", png_data, content_type="image/png")
+
+        data = {
+            'username': 'newuser',
+            'password': 'newpassword',
+            'first_name': 'New',
+            'last_name': 'User',
+            'phone_number': '1234567890',
+            'reference_image': dummy_image
+        }
+
+        response = self.client.post('/register/', data)
+
+        self.assertEqual(response.status_code, 200) # Should re-render the form
+        self.assertContains(response, "This face appears to be already registered to another user.")
+        self.assertEqual(User.objects.count(), 1) # No new user should be created
+
+        # Scenario 2: No duplicate face is found
+        mock_find_face.return_value = (None, None, "No match found.")
+
+        # We need a new dummy image object for the second request
+        dummy_image_2 = SimpleUploadedFile("face2.png", png_data, content_type="image/png")
+        data['reference_image'] = dummy_image_2
+
+        response = self.client.post('/register/', data)
+
+        self.assertEqual(response.status_code, 302) # Should redirect on success
+        self.assertEqual(User.objects.count(), 2) # New user should be created

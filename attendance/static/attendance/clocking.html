@@ -25,6 +25,12 @@
 </head>
 <body>
     <h1>Clocking System</h1>
+
+    <div id="camera-container" style="margin-bottom: 20px;">
+        <video id="video" width="320" height="240" autoplay playsinline></video>
+        <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    </div>
+
     <button onclick="clockIn()">Clock In</button>
     <button onclick="startBreak()">Start Break</button>
     <button onclick="endBreak()">End Break</button>
@@ -41,6 +47,27 @@
     </div>
 
     <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+
+        // Initialize camera
+        if (navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function (stream) {
+                    video.srcObject = stream;
+                })
+                .catch(function (error) {
+                    console.log("Something went wrong with the camera: ", error);
+                    alert("Could not access the camera. Please ensure it is enabled and permissions are granted.");
+                });
+        }
+
+        function captureImage() {
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, 320, 240);
+            return canvas.toDataURL('image/png');
+        }
+
         const apiUrl = "http://127.0.0.1:8000/api/";
         let clockInTime = null;
         let timerInterval = null;
@@ -81,11 +108,14 @@
         }
 
         function clockIn() {
+            const imageData = captureImage();
+
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(pos) {
                     makeRequest("clock-in", {
                         latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude
+                        longitude: pos.coords.longitude,
+                        face_capture: imageData
                     });
                 }, function(err) {
                     alert("Geolocation is required to clock in. Please enable location services and try again.");
@@ -104,11 +134,14 @@
         }
 
         function clockOut() {
+            const imageData = captureImage();
+
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(pos) {
                     makeRequest("clock-out", {
                         latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude
+                        longitude: pos.coords.longitude,
+                        face_capture: imageData
                     });
                 }, function(err) {
                     alert("Geolocation is required to clock out. Please enable location services and try again.");

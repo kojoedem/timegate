@@ -55,6 +55,7 @@ class ClockInView(APIView):
         serializer.is_valid(raise_exception=True)
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
+        face_capture = serializer.validated_data.get("face_capture")
 
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
@@ -64,7 +65,11 @@ class ClockInView(APIView):
         if open_att:
             return Response({"detail": "You already have an active session."}, status=status.HTTP_400_BAD_REQUEST)
 
-        att = Attendance.objects.create(user=request.user, clock_in=now())
+        att = Attendance.objects.create(
+            user=request.user,
+            clock_in=now(),
+            face_capture_in=face_capture
+        )
         return Response(AttendanceSerializer(att).data, status=status.HTTP_201_CREATED)
 
 class BreakStartView(APIView):
@@ -111,12 +116,14 @@ class ClockOutView(APIView):
         serializer.is_valid(raise_exception=True)
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
+        face_capture = serializer.validated_data.get("face_capture")
 
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
             return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
 
         att.clock_out = now()
+        att.face_capture_out = face_capture
 
         # compute total seconds worked, subtracting break if present
         total = int((att.clock_out - att.clock_in).total_seconds())

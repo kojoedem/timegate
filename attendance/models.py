@@ -25,6 +25,8 @@ class Attendance(models.Model):
     break_start = models.DateTimeField(null=True, blank=True)
     break_end = models.DateTimeField(null=True, blank=True)
     clock_out = models.DateTimeField(null=True, blank=True)
+    face_capture_in = models.ImageField(upload_to='face_captures/', null=True, blank=True)
+    face_capture_out = models.ImageField(upload_to='face_captures/', null=True, blank=True)
     total_seconds = models.PositiveIntegerField(default=0)
     date = models.DateField(default=now)
 

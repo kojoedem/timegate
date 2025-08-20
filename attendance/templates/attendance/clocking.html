@@ -6,7 +6,12 @@
 {% block content %}
 <div class="d-flex flex-column justify-content-center align-items-center">
     <div class="col-md-8 col-lg-6">
-        <h1 id="user-greeting">Please look at the camera to log in...</h1>
+        <div class="text-center">
+            <h1 id="user-greeting" class="d-inline">Please look at the camera to log in...</h1>
+            <div id="nav-links" class="d-inline" style="display: none;">
+                <a href="{% url 'profile_page' %}">(My Profile)</a>
+            </div>
+        </div>
 
     <div id="camera-container" class="text-center mb-4">
         <video id="video" width="320" height="240" autoplay playsinline class="border rounded"></video>

@@ -207,6 +207,9 @@ class ClockOutView(APIView):
         return Response(AttendanceSerializer(att).data)
 
 from django.shortcuts import render, redirect
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib import messages
 from .forms import UserRegistrationForm
 
 
@@ -234,6 +237,25 @@ def register(request):
     else:
         form = UserRegistrationForm()
     return render(request, 'attendance/register.html', {'form': form})
+
+
+class UserProfileView(LoginRequiredMixin, View):
+    def get(self, request):
+        attendances = Attendance.objects.filter(user=request.user).order_by('-date', '-clock_in')
+        context = {
+            'attendances': attendances
+        }
+        return render(request, 'attendance/profile.html', context)
+
+    def post(self, request):
+        new_image = request.FILES.get('reference_image')
+        if new_image:
+            profile = request.user.profile
+            profile.reference_image = new_image
+            profile.save()
+            messages.success(request, 'Your profile picture has been updated successfully!')
+
+        return redirect('profile_page')
 
 
 class FaceLoginView(APIView):

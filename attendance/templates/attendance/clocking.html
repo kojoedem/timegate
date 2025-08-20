@@ -1,245 +1,56 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clocking System</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        button {
-            margin: 10px 0;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        #response, #clock-time {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #ccc;
-            background-color: #f9f9f9;
-        }
-    </style>
-</head>
-<body>
+{% extends 'attendance/base.html' %}
+{% load static %}
+
+{% block title %}Clock In/Out - TimeGate{% endblock %}
+
+{% block content %}
     <h1 id="user-greeting">Please look at the camera to log in...</h1>
 
-    <div id="camera-container" style="margin-bottom: 20px;">
-        <video id="video" width="320" height="240" autoplay playsinline></video>
+    <div id="camera-container" class="text-center mb-4">
+        <video id="video" width="320" height="240" autoplay playsinline class="border rounded"></video>
         <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
     </div>
 
-    <div id="clocking-controls" style="display:none;">
-        <button onclick="clockIn()">Clock In</button>
-        <button onclick="startBreak()">Start Break</button>
-        <button onclick="endBreak()">End Break</button>
-        <button onclick="initiateClockOut()">Clock Out</button>
+    <div id="clocking-controls" style="display:none;" class="d-grid gap-2 col-md-6 mx-auto">
+        <button class="btn btn-primary btn-lg" onclick="clockIn()">Clock In</button>
+        <div class="btn-group">
+            <button class="btn btn-secondary" onclick="startBreak()">Start Break</button>
+            <button class="btn btn-secondary" onclick="endBreak()">End Break</button>
+        </div>
+        <button class="btn btn-danger" onclick="initiateClockOut()">Clock Out</button>
     </div>
-    <div id="confirm-clockout-container" style="display:none;">
+
+    <div id="confirm-clockout-container" style="display:none;" class="text-center">
         <p>Please look at the camera to verify for clock-out.</p>
-        <button onclick="confirmClockOut()">Confirm Clock Out</button>
+        <button class="btn btn-danger" onclick="confirmClockOut()">Confirm Clock Out</button>
     </div>
 
-    <div id="clock-time">
-        <strong>Elapsed Time:</strong>
-        <p id="elapsed-time">Not clocked in yet.</p>
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">Elapsed Time</div>
+                <div class="card-body">
+                    <p id="elapsed-time" class="card-text fs-4">Not clocked in yet.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">Status</div>
+                <div class="card-body">
+                    <div id="notification-area">
+                        <p id="response-text">No actions yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div id="response">
-        <strong>Response:</strong>
-        <p id="response-text">No actions yet.</p>
+    <div class="mt-3 text-center">
+        <p>Don't have an account? <a href="{% url 'register' %}">Register here</a>.</p>
     </div>
+{% endblock %}
 
-    <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const apiUrl = "http://127.0.0.1:8000/api/";
-        let clockInTime = null;
-        let timerInterval = null;
-        let authToken = null;
-        let faceLoginInterval = null;
-        let cameraStream = null;
-
-        function stopCamera() {
-            if (cameraStream) {
-                cameraStream.getTracks().forEach(track => track.stop());
-                cameraStream = null;
-            }
-        }
-
-        function startCamera() {
-            return new Promise((resolve, reject) => {
-                if (navigator.mediaDevices.getUserMedia) {
-                    navigator.mediaDevices.getUserMedia({ video: true })
-                        .then(function (stream) {
-                            cameraStream = stream;
-                            video.srcObject = stream;
-                            video.style.display = 'block'; // Ensure video is visible
-                            resolve(stream);
-                        })
-                        .catch(function (error) {
-                            console.log("Something went wrong with the camera: ", error);
-                            alert("Could not access the camera. Please ensure it is enabled and permissions are granted.");
-                            reject(error);
-                        });
-                } else {
-                    alert("Camera functionality is not supported by this browser.");
-                    reject(new Error("getUserMedia not supported"));
-                }
-            });
-        }
-
-        // Initial camera start for login
-        startCamera().then(() => {
-            faceLoginInterval = setInterval(attemptFaceLogin, 2500); // Try every 2.5 seconds
-        }).catch(() => {
-            document.getElementById('user-greeting').innerText = 'Camera access is required for this application.';
-        });
-
-        function captureImage() {
-            const context = canvas.getContext('2d');
-            context.drawImage(video, 0, 0, 320, 240);
-            return canvas.toDataURL('image/png');
-        }
-
-        async function attemptFaceLogin() {
-            if (!cameraStream) return;
-            const imageData = captureImage();
-            try {
-                const response = await fetch(`${apiUrl}face-login/`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({face_capture: imageData})
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    authToken = data.token;
-                    clearInterval(faceLoginInterval);
-                    stopCamera();
-                    document.getElementById('camera-container').style.display = 'none';
-                    document.getElementById('clocking-controls').style.display = 'block';
-                    document.getElementById('user-greeting').innerText = `Welcome, ${data.username}!`;
-                    document.getElementById('response-text').innerText = 'Logged in successfully.';
-                }
-            } catch (error) {
-                // Fail silently and retry on next interval
-            }
-        }
-
-        async function makeRequest(endpoint, body = {}) {
-            if (!authToken) {
-                alert("Authentication failed. Please refresh and log in again.");
-                return Promise.reject("No auth token");
-            }
-
-            try {
-                const response = await fetch(`${apiUrl}${endpoint}/`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Token ${authToken}`
-                    },
-                    body: JSON.stringify(body)
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    document.getElementById("response-text").innerText = JSON.stringify(data, null, 2);
-
-                    if (endpoint === "clock-in") {
-                        clockInTime = new Date(data.clock_in);
-                        startClockTimer();
-                    } else if (endpoint === "clock-out") {
-                        clockInTime = null;
-                        clearInterval(timerInterval);
-                        document.getElementById("elapsed-time").innerText = "Not clocked in yet.";
-                    }
-                    return data; // Resolve promise on success
-                } else {
-                    const errorText = await response.text();
-                    document.getElementById("response-text").innerText = `Error: ${response.status} ${response.statusText}\n${errorText}`;
-                    return Promise.reject(errorText);
-                }
-            } catch (error) {
-                document.getElementById("response-text").innerText = "Network Error: " + error.message;
-                return Promise.reject(error);
-            }
-        }
-
-        function clockIn() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(function(pos) {
-                    makeRequest("clock-in", {
-                        latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude
-                    });
-                }, function(err) {
-                    alert("Geolocation is required to clock in.");
-                });
-            } else {
-                alert("Geolocation is not supported by this browser.");
-            }
-        }
-
-        function startBreak() { makeRequest("break-start"); }
-        function endBreak() { makeRequest("break-end"); }
-
-        function initiateClockOut() {
-            document.getElementById('clocking-controls').style.display = 'none';
-            document.getElementById('camera-container').style.display = 'block';
-            document.getElementById('confirm-clockout-container').style.display = 'block';
-            startCamera();
-        }
-
-        function confirmClockOut() {
-            const imageData = captureImage();
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(function(pos) {
-                    makeRequest("clock-out", {
-                        latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude,
-                        face_capture: imageData
-                    }).then(() => {
-                        authToken = null;
-                        stopCamera();
-                        document.getElementById('user-greeting').innerText = 'You have been logged out. Refresh to log in again.';
-                        document.getElementById('confirm-clockout-container').style.display = 'none';
-                        document.getElementById('camera-container').style.display = 'none';
-                    }).catch(err => {
-                        alert("Clock-out failed. Please try again.");
-                        // Reset UI for another attempt
-                        document.getElementById('clocking-controls').style.display = 'block';
-                        document.getElementById('camera-container').style.display = 'none';
-                        document.getElementById('confirm-clockout-container').style.display = 'none';
-                        stopCamera();
-                    });
-                }, function(err) {
-                    alert("Geolocation is required to clock out.");
-                });
-            } else {
-                alert("Geolocation is not supported by this browser.");
-            }
-        }
-
-        function startClockTimer() {
-            if (!clockInTime) return;
-            clearInterval(timerInterval);
-
-            function updateElapsedTime() {
-                if (!clockInTime) return;
-                const now = new Date();
-                const elapsedMilliseconds = now - clockInTime;
-                const hours = Math.floor(elapsedMilliseconds / (1000 * 60 * 60));
-                const minutes = Math.floor((elapsedMilliseconds % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((elapsedMilliseconds % (1000 * 60)) / 1000);
-                document.getElementById("elapsed-time").innerText = `${hours}h ${minutes}m ${seconds}s`;
-            }
-
-            updateElapsedTime();
-            timerInterval = setInterval(updateElapsedTime, 1000);
-        }
-    </script>
-</body>
-</html>
+{% block scripts %}
+    <script src="{% static 'attendance/js/clocking.js' %}"></script>
+{% endblock %}

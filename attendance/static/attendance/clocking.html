@@ -41,10 +41,11 @@
     </div>
 
     <script>
-        const apiUrl = "http://127.0.0.1:8000/api/attendance/";
-        let clockInTime = null; // To store the clock-in time
+        const apiUrl = "http://127.0.0.1:8000/api/";
+        let clockInTime = null;
+        let timerInterval = null;
 
-        async function makeRequest(action, body = {}) {
+        async function makeRequest(endpoint, body = {}) {
             const token = prompt("Enter your authentication token:");
             if (!token) {
                 alert("Authentication token is required!");
@@ -52,7 +53,7 @@
             }
 
             try {
-                const response = await fetch(`${apiUrl}${action}/`, {
+                const response = await fetch(`${apiUrl}${endpoint}/`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -64,10 +65,15 @@
                 const data = await response.json();
                 document.getElementById("response-text").innerText = JSON.stringify(data, null, 2);
 
-                // If the action is clock_in and successful, store the clock-in time
-                if (action === "geolocation-clock-in" && response.ok) {
-                    clockInTime = new Date(); // Set the current time as clock-in time
-                    startClockTimer();
+                if (response.ok) {
+                    if (endpoint === "clock-in") {
+                        clockInTime = new Date(data.clock_in);
+                        startClockTimer();
+                    } else if (endpoint === "clock-out") {
+                        clockInTime = null;
+                        clearInterval(timerInterval);
+                        document.getElementById("elapsed-time").innerText = "Not clocked in yet.";
+                    }
                 }
             } catch (error) {
                 document.getElementById("response-text").innerText = "Error: " + error.message;
@@ -77,34 +83,48 @@
         function clockIn() {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(pos) {
-                    makeRequest("geolocation-clock-in", {
+                    makeRequest("clock-in", {
                         latitude: pos.coords.latitude,
                         longitude: pos.coords.longitude
                     });
                 }, function(err) {
-                    alert("Unable to get location: " + err.message);
+                    // Geolocation failed, try to clock in without it
+                    makeRequest("clock-in");
                 });
             } else {
-                alert("Geolocation not supported");
+                // Geolocation not supported, try to clock in without it
+                makeRequest("clock-in");
             }
         }
 
         function startBreak() {
-            makeRequest("start_break");
+            makeRequest("break-start");
         }
 
         function endBreak() {
-            makeRequest("end_break");
+            makeRequest("break-end");
         }
 
         function clockOut() {
-            makeRequest("clock_out");
-            clockInTime = null; // Reset clock-in time
-            document.getElementById("elapsed-time").innerText = "Not clocked in yet.";
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(pos) {
+                    makeRequest("clock-out", {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude
+                    });
+                }, function(err) {
+                    // Geolocation failed, try to clock out without it
+                    makeRequest("clock-out");
+                });
+            } else {
+                // Geolocation not supported, try to clock out without it
+                makeRequest("clock-out");
+            }
         }
 
         function startClockTimer() {
             if (!clockInTime) return;
+            clearInterval(timerInterval);
 
             function updateElapsedTime() {
                 if (!clockInTime) return;
@@ -118,8 +138,8 @@
                 document.getElementById("elapsed-time").innerText = `${hours}h ${minutes}m ${seconds}s`;
             }
 
-            // Update the elapsed time every second
-            setInterval(updateElapsedTime, 1000);
+            updateElapsedTime();
+            timerInterval = setInterval(updateElapsedTime, 1000);
         }
     </script>
 </body>

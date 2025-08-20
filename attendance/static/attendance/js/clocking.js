@@ -76,6 +76,7 @@ async function attemptFaceLogin() {
             stopCamera();
             document.getElementById('camera-container').style.display = 'none';
             document.getElementById('clocking-controls').style.display = 'block';
+            document.getElementById('nav-links').style.display = 'inline';
             document.getElementById('user-greeting').innerHTML = `Welcome, <span class="fw-bold text-primary">${data.username}</span>!`;
             showNotification('Logged in successfully!', 'success');
         }

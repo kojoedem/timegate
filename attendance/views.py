@@ -1,11 +1,14 @@
 from math import radians, sin, cos, sqrt, atan2
-
+import cv2
+import numpy as np
+from django.contrib.auth.models import User
 from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from rest_framework.authtoken.models import Token
 
-from .models import Attendance, OfficeLocation, AllowedIP
+from .models import Attendance, OfficeLocation, AllowedIP, Profile
 from .serializers import AttendActionSerializer, AttendanceSerializer
 
 
@@ -55,7 +58,6 @@ class ClockInView(APIView):
         serializer.is_valid(raise_exception=True)
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
-        face_capture = serializer.validated_data.get("face_capture")
 
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
@@ -65,11 +67,7 @@ class ClockInView(APIView):
         if open_att:
             return Response({"detail": "You already have an active session."}, status=status.HTTP_400_BAD_REQUEST)
 
-        att = Attendance.objects.create(
-            user=request.user,
-            clock_in=now(),
-            face_capture_in=face_capture
-        )
+        att = Attendance.objects.create(user=request.user, clock_in=now())
         return Response(AttendanceSerializer(att).data, status=status.HTTP_201_CREATED)
 
 class BreakStartView(APIView):
@@ -116,14 +114,12 @@ class ClockOutView(APIView):
         serializer.is_valid(raise_exception=True)
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
-        face_capture = serializer.validated_data.get("face_capture")
 
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
             return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
 
         att.clock_out = now()
-        att.face_capture_out = face_capture
 
         # compute total seconds worked, subtracting break if present
         total = int((att.clock_out - att.clock_in).total_seconds())
@@ -133,6 +129,10 @@ class ClockOutView(APIView):
         att.save()
         return Response(AttendanceSerializer(att).data)
 
+from django.shortcuts import render, redirect
+from .forms import UserRegistrationForm
+
+
 class TodayStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -141,3 +141,91 @@ class TodayStatusView(APIView):
         if att:
             return Response(AttendanceSerializer(att).data)
         return Response({"detail": "No active session."})
+
+
+def clocking_page(request):
+    return render(request, 'attendance/clocking.html')
+
+
+def register(request):
+    if request.method == 'POST':
+        form = UserRegistrationForm(request.POST, request.FILES)
+        if form.is_valid():
+            form.save()
+            # Face encoding logic will be added here in a later step.
+            return redirect('clocking_page')
+    else:
+        form = UserRegistrationForm()
+    return render(request, 'attendance/register.html', {'form': form})
+
+
+class FaceLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = AttendActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        uploaded_image_file = serializer.validated_data.get("face_capture")
+
+        if not uploaded_image_file:
+            return Response({"detail": "No image provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Prepare training data
+        profiles = Profile.objects.filter(reference_image__isnull=False).exclude(reference_image='')
+        if not profiles.exists():
+            return Response({"detail": "No registered faces in the system."}, status=status.HTTP_400_BAD_REQUEST)
+
+        faces = []
+        labels = []
+
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+        for profile in profiles:
+            # Read the image from the storage
+            image_path = profile.reference_image.path
+            ref_img = cv2.imread(image_path)
+            gray_ref_img = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
+
+            # Detect face in the reference image
+            detected_faces = face_cascade.detectMultiScale(gray_ref_img, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+            if len(detected_faces) > 0:
+                (x, y, w, h) = detected_faces[0]
+                faces.append(gray_ref_img[y:y+h, x:x+w])
+                labels.append(profile.user.id)
+
+        if not faces:
+            return Response({"detail": "Could not extract faces from reference images."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # 2. Train the recognizer
+        recognizer = cv2.face.LBPHFaceRecognizer_create()
+        recognizer.train(faces, np.array(labels))
+
+        # 3. Process the uploaded image
+        uploaded_img_data = uploaded_image_file.read()
+        np_arr = np.frombuffer(uploaded_img_data, np.uint8)
+        uploaded_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        gray_uploaded_img = cv2.cvtColor(uploaded_img, cv2.COLOR_BGR2GRAY)
+
+        # Detect face in the uploaded image
+        detected_faces_uploaded = face_cascade.detectMultiScale(gray_uploaded_img, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+        if len(detected_faces_uploaded) == 0:
+            return Response({"detail": "No face detected in the provided image."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4. Make a prediction
+        (x, y, w, h) = detected_faces_uploaded[0]
+        predicted_label, confidence = recognizer.predict(gray_uploaded_img[y:y+h, x:x+w])
+
+        # 5. Validate prediction and log in
+        # For LBPH, lower confidence is better. 0 is a perfect match.
+        CONFIDENCE_THRESHOLD = 80
+        if confidence < CONFIDENCE_THRESHOLD:
+            try:
+                user = User.objects.get(id=predicted_label)
+                token, created = Token.objects.get_or_create(user=user)
+                return Response({'token': token.key, 'username': user.username})
+            except User.DoesNotExist:
+                return Response({"detail": "Identified user not found."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"detail": "Could not identify face."}, status=status.HTTP_400_BAD_REQUEST)

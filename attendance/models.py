@@ -19,14 +19,34 @@ class AllowedIP(models.Model):
     def __str__(self):
         return self.ip_address
 
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    phone_number = models.CharField(max_length=15, blank=True)
+    reference_image = models.ImageField(upload_to='reference_images/', null=True, blank=True)
+
+    def __str__(self):
+        return f'{self.user.username} Profile'
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        Profile.objects.create(user=instance)
+
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    instance.profile.save()
+
+
 class Attendance(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="attendances")
     clock_in = models.DateTimeField(null=True, blank=True)
     break_start = models.DateTimeField(null=True, blank=True)
     break_end = models.DateTimeField(null=True, blank=True)
     clock_out = models.DateTimeField(null=True, blank=True)
-    face_capture_in = models.ImageField(upload_to='face_captures/', null=True, blank=True)
-    face_capture_out = models.ImageField(upload_to='face_captures/', null=True, blank=True)
     total_seconds = models.PositiveIntegerField(default=0)
     date = models.DateField(default=now)
 

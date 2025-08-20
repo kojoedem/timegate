@@ -24,17 +24,19 @@
     </style>
 </head>
 <body>
-    <h1>Clocking System</h1>
+    <h1 id="user-greeting">Please look at the camera to log in...</h1>
 
     <div id="camera-container" style="margin-bottom: 20px;">
         <video id="video" width="320" height="240" autoplay playsinline></video>
         <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
     </div>
 
-    <button onclick="clockIn()">Clock In</button>
-    <button onclick="startBreak()">Start Break</button>
-    <button onclick="endBreak()">End Break</button>
-    <button onclick="clockOut()">Clock Out</button>
+    <div id="clocking-controls" style="display:none;">
+        <button onclick="clockIn()">Clock In</button>
+        <button onclick="startBreak()">Start Break</button>
+        <button onclick="endBreak()">End Break</button>
+        <button onclick="clockOut()">Clock Out</button>
+    </div>
 
     <div id="clock-time">
         <strong>Elapsed Time:</strong>
@@ -49,12 +51,18 @@
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
+        const apiUrl = "http://127.0.0.1:8000/api/";
+        let clockInTime = null;
+        let timerInterval = null;
+        let authToken = null;
+        let faceLoginInterval = null;
 
         // Initialize camera
         if (navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(function (stream) {
                     video.srcObject = stream;
+                    faceLoginInterval = setInterval(attemptFaceLogin, 2000); // Try every 2 seconds
                 })
                 .catch(function (error) {
                     console.log("Something went wrong with the camera: ", error);
@@ -68,14 +76,32 @@
             return canvas.toDataURL('image/png');
         }
 
-        const apiUrl = "http://127.0.0.1:8000/api/";
-        let clockInTime = null;
-        let timerInterval = null;
+        async function attemptFaceLogin() {
+            if (!video.srcObject) return; // Don't try if camera isn't ready
+            const imageData = captureImage();
+            try {
+                const response = await fetch(`${apiUrl}face-login/`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({face_capture: imageData})
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.token;
+                    clearInterval(faceLoginInterval);
+                    document.getElementById('camera-container').style.display = 'none';
+                    document.getElementById('clocking-controls').style.display = 'block';
+                    document.getElementById('user-greeting').innerText = `Welcome, ${data.username}!`;
+                    document.getElementById('response-text').innerText = 'Logged in successfully.';
+                }
+            } catch (error) {
+                console.error("Face login attempt failed:", error);
+            }
+        }
 
         async function makeRequest(endpoint, body = {}) {
-            const token = prompt("Enter your authentication token:");
-            if (!token) {
-                alert("Authentication token is required!");
+            if (!authToken) {
+                alert("Authentication failed. Please refresh and log in again.");
                 return;
             }
 
@@ -84,7 +110,7 @@
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        "Authorization": `Token ${token}`
+                        "Authorization": `Token ${authToken}`
                     },
                     body: JSON.stringify(body)
                 });
@@ -108,14 +134,11 @@
         }
 
         function clockIn() {
-            const imageData = captureImage();
-
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(pos) {
                     makeRequest("clock-in", {
                         latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude,
-                        face_capture: imageData
+                        longitude: pos.coords.longitude
                     });
                 }, function(err) {
                     alert("Geolocation is required to clock in. Please enable location services and try again.");
@@ -134,14 +157,11 @@
         }
 
         function clockOut() {
-            const imageData = captureImage();
-
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(pos) {
                     makeRequest("clock-out", {
                         latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude,
-                        face_capture: imageData
+                        longitude: pos.coords.longitude
                     });
                 }, function(err) {
                     alert("Geolocation is required to clock out. Please enable location services and try again.");

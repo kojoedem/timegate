@@ -88,12 +88,10 @@
                         longitude: pos.coords.longitude
                     });
                 }, function(err) {
-                    // Geolocation failed, try to clock in without it
-                    makeRequest("clock-in");
+                    alert("Geolocation is required to clock in. Please enable location services and try again.");
                 });
             } else {
-                // Geolocation not supported, try to clock in without it
-                makeRequest("clock-in");
+                alert("Geolocation is not supported by this browser.");
             }
         }
 
@@ -113,12 +111,10 @@
                         longitude: pos.coords.longitude
                     });
                 }, function(err) {
-                    // Geolocation failed, try to clock out without it
-                    makeRequest("clock-out");
+                    alert("Geolocation is required to clock out. Please enable location services and try again.");
                 });
             } else {
-                // Geolocation not supported, try to clock out without it
-                makeRequest("clock-out");
+                alert("Geolocation is not supported by this browser.");
             }
         }
 

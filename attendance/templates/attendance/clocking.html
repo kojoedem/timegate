@@ -35,7 +35,11 @@
         <button onclick="clockIn()">Clock In</button>
         <button onclick="startBreak()">Start Break</button>
         <button onclick="endBreak()">End Break</button>
-        <button onclick="clockOut()">Clock Out</button>
+        <button onclick="initiateClockOut()">Clock Out</button>
+    </div>
+    <div id="confirm-clockout-container" style="display:none;">
+        <p>Please look at the camera to verify for clock-out.</p>
+        <button onclick="confirmClockOut()">Confirm Clock Out</button>
     </div>
 
     <div id="clock-time">
@@ -56,19 +60,43 @@
         let timerInterval = null;
         let authToken = null;
         let faceLoginInterval = null;
+        let cameraStream = null;
 
-        // Initialize camera
-        if (navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(function (stream) {
-                    video.srcObject = stream;
-                    faceLoginInterval = setInterval(attemptFaceLogin, 2000); // Try every 2 seconds
-                })
-                .catch(function (error) {
-                    console.log("Something went wrong with the camera: ", error);
-                    alert("Could not access the camera. Please ensure it is enabled and permissions are granted.");
-                });
+        function stopCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
         }
+
+        function startCamera() {
+            return new Promise((resolve, reject) => {
+                if (navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({ video: true })
+                        .then(function (stream) {
+                            cameraStream = stream;
+                            video.srcObject = stream;
+                            video.style.display = 'block'; // Ensure video is visible
+                            resolve(stream);
+                        })
+                        .catch(function (error) {
+                            console.log("Something went wrong with the camera: ", error);
+                            alert("Could not access the camera. Please ensure it is enabled and permissions are granted.");
+                            reject(error);
+                        });
+                } else {
+                    alert("Camera functionality is not supported by this browser.");
+                    reject(new Error("getUserMedia not supported"));
+                }
+            });
+        }
+
+        // Initial camera start for login
+        startCamera().then(() => {
+            faceLoginInterval = setInterval(attemptFaceLogin, 2500); // Try every 2.5 seconds
+        }).catch(() => {
+            document.getElementById('user-greeting').innerText = 'Camera access is required for this application.';
+        });
 
         function captureImage() {
             const context = canvas.getContext('2d');
@@ -77,7 +105,7 @@
         }
 
         async function attemptFaceLogin() {
-            if (!video.srcObject) return; // Don't try if camera isn't ready
+            if (!cameraStream) return;
             const imageData = captureImage();
             try {
                 const response = await fetch(`${apiUrl}face-login/`, {
@@ -89,20 +117,21 @@
                     const data = await response.json();
                     authToken = data.token;
                     clearInterval(faceLoginInterval);
+                    stopCamera();
                     document.getElementById('camera-container').style.display = 'none';
                     document.getElementById('clocking-controls').style.display = 'block';
                     document.getElementById('user-greeting').innerText = `Welcome, ${data.username}!`;
                     document.getElementById('response-text').innerText = 'Logged in successfully.';
                 }
             } catch (error) {
-                console.error("Face login attempt failed:", error);
+                // Fail silently and retry on next interval
             }
         }
 
         async function makeRequest(endpoint, body = {}) {
             if (!authToken) {
                 alert("Authentication failed. Please refresh and log in again.");
-                return;
+                return Promise.reject("No auth token");
             }
 
             try {
@@ -127,9 +156,13 @@
                         clearInterval(timerInterval);
                         document.getElementById("elapsed-time").innerText = "Not clocked in yet.";
                     }
+                    return data; // Resolve promise on success
+                } else {
+                    return Promise.reject(data); // Reject promise on failure
                 }
             } catch (error) {
                 document.getElementById("response-text").innerText = "Error: " + error.message;
+                return Promise.reject(error);
             }
         }
 
@@ -141,30 +174,47 @@
                         longitude: pos.coords.longitude
                     });
                 }, function(err) {
-                    alert("Geolocation is required to clock in. Please enable location services and try again.");
+                    alert("Geolocation is required to clock in.");
                 });
             } else {
                 alert("Geolocation is not supported by this browser.");
             }
         }
 
-        function startBreak() {
-            makeRequest("break-start");
+        function startBreak() { makeRequest("break-start"); }
+        function endBreak() { makeRequest("break-end"); }
+
+        function initiateClockOut() {
+            document.getElementById('clocking-controls').style.display = 'none';
+            document.getElementById('camera-container').style.display = 'block';
+            document.getElementById('confirm-clockout-container').style.display = 'block';
+            startCamera();
         }
 
-        function endBreak() {
-            makeRequest("break-end");
-        }
-
-        function clockOut() {
+        function confirmClockOut() {
+            const imageData = captureImage();
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(function(pos) {
                     makeRequest("clock-out", {
                         latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude
+                        longitude: pos.coords.longitude,
+                        face_capture: imageData
+                    }).then(() => {
+                        authToken = null;
+                        stopCamera();
+                        document.getElementById('user-greeting').innerText = 'You have been logged out. Refresh to log in again.';
+                        document.getElementById('confirm-clockout-container').style.display = 'none';
+                        document.getElementById('camera-container').style.display = 'none';
+                    }).catch(err => {
+                        alert("Clock-out failed. Please try again.");
+                        // Reset UI for another attempt
+                        document.getElementById('clocking-controls').style.display = 'block';
+                        document.getElementById('camera-container').style.display = 'none';
+                        document.getElementById('confirm-clockout-container').style.display = 'none';
+                        stopCamera();
                     });
                 }, function(err) {
-                    alert("Geolocation is required to clock out. Please enable location services and try again.");
+                    alert("Geolocation is required to clock out.");
                 });
             } else {
                 alert("Geolocation is not supported by this browser.");
@@ -177,13 +227,11 @@
 
             function updateElapsedTime() {
                 if (!clockInTime) return;
-
                 const now = new Date();
                 const elapsedMilliseconds = now - clockInTime;
                 const hours = Math.floor(elapsedMilliseconds / (1000 * 60 * 60));
                 const minutes = Math.floor((elapsedMilliseconds % (1000 * 60 * 60)) / (1000 * 60));
                 const seconds = Math.floor((elapsedMilliseconds % (1000 * 60)) / 1000);
-
                 document.getElementById("elapsed-time").innerText = `${hours}h ${minutes}m ${seconds}s`;
             }
 

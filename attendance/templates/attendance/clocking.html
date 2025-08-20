@@ -144,10 +144,10 @@
                     body: JSON.stringify(body)
                 });
 
-                const data = await response.json();
-                document.getElementById("response-text").innerText = JSON.stringify(data, null, 2);
-
                 if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById("response-text").innerText = JSON.stringify(data, null, 2);
+
                     if (endpoint === "clock-in") {
                         clockInTime = new Date(data.clock_in);
                         startClockTimer();
@@ -158,10 +158,12 @@
                     }
                     return data; // Resolve promise on success
                 } else {
-                    return Promise.reject(data); // Reject promise on failure
+                    const errorText = await response.text();
+                    document.getElementById("response-text").innerText = `Error: ${response.status} ${response.statusText}\n${errorText}`;
+                    return Promise.reject(errorText);
                 }
             } catch (error) {
-                document.getElementById("response-text").innerText = "Error: " + error.message;
+                document.getElementById("response-text").innerText = "Network Error: " + error.message;
                 return Promise.reject(error);
             }
         }

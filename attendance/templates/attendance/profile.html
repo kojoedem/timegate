@@ -1,6 +1,4 @@
 {% extends 'attendance/base.html' %}
-{% load attendance_filters %}
-
 
 {% block title %}My Profile - TimeGate{% endblock %}
 
@@ -53,13 +51,13 @@
                         <td>{{ attendance.date }}</td>
                         <td>{{ attendance.clock_in|time:"H:i:s" }}</td>
                         <td>{{ attendance.clock_out|time:"H:i:s"|default:"--" }}</td>
-                    <td>
-                        {% if attendance.total_seconds > 0 %}
-                            {{ attendance.total_seconds|hours }}h {{ attendance.total_seconds|minutes }}m
-                        {% else %}
-                            --
-                        {% endif %}
-                    </td>
+                        <td>
+                            {% if attendance.total_seconds > 0 %}
+                                {{ attendance.total_seconds // 3600 }}h {{ (attendance.total_seconds % 3600) // 60 }}m
+                            {% else %}
+                                --
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
                     <tr>

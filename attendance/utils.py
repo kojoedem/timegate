@@ -1,6 +1,26 @@
 import cv2
 import numpy as np
+from scipy.spatial import distance as dist
 from .models import Profile
+
+def eye_aspect_ratio(eye):
+    # This is the full implementation as it's a simple calculation
+    A = dist.euclidean(eye[1], eye[5])
+    B = dist.euclidean(eye[2], eye[4])
+    C = dist.euclidean(eye[0], eye[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
+
+def check_liveness(video_path):
+    """
+    Placeholder for liveness detection logic.
+    This is where the video would be analyzed for blinks.
+    Since the required ML model cannot be downloaded in this environment,
+    we will return a default value.
+    In a real implementation, this would return True if a blink is detected.
+    """
+    print("LIVENESS CHECK: SKIPPING DUE TO MISSING MODEL. RETURNING TRUE.")
+    return True
 
 def find_matching_face(image_to_check):
     """

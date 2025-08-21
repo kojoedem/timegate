@@ -163,3 +163,27 @@ class AttendanceAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 302) # Should redirect on success
         self.assertEqual(User.objects.count(), 2) # New user should be created
+
+    @patch('attendance.views.check_liveness')
+    def test_liveness_check_view(self, mock_check_liveness):
+        # Scenario 1: Liveness check passes
+        mock_check_liveness.return_value = True
+
+        dummy_video = SimpleUploadedFile("video.webm", b"video_content", content_type="video/webm")
+
+        # This view doesn't require auth, so we don't need to log in
+        # We also need to clear the credentials set in setUp if we want to test as an anonymous user
+        self.client.credentials()
+        response = self.client.post('/api/liveness-check/', {'video_clip': dummy_video})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['detail'], "Liveness check passed.")
+
+        # Scenario 2: Liveness check fails
+        mock_check_liveness.return_value = False
+
+        dummy_video_2 = SimpleUploadedFile("video2.webm", b"video_content_2", content_type="video/webm")
+        response = self.client.post('/api/liveness-check/', {'video_clip': dummy_video_2})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data['detail'], "Liveness check failed.")

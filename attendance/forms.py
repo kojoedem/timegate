@@ -1,6 +1,6 @@
 from django import forms
 from django.contrib.auth.models import User, Group
-from .models import Profile, GroupTimePolicy
+from .models import Profile, GroupTimePolicy, Logo
 from .utils import is_face_already_registered
 
 class UserRegistrationForm(forms.ModelForm):
@@ -50,11 +50,9 @@ class GroupTimePolicyForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # If editing an existing policy, disable the group field as it cannot be changed.
         if self.instance and self.instance.pk:
              self.fields['group'].disabled = True
         else:
-            # For new policies, only show groups that don't have one yet
             self.fields['group'].queryset = Group.objects.filter(time_policy__isnull=True)
 
 class CreateGroupForm(forms.ModelForm):
@@ -78,14 +76,12 @@ class UserEditForm(forms.ModelForm):
         fields = ['first_name', 'last_name', 'email', 'groups']
 
     def __init__(self, *args, **kwargs):
-        # We need to pop 'user_groups' kwarg before calling super
         user_groups = kwargs.pop('user_groups', None)
         super().__init__(*args, **kwargs)
         if self.instance:
             self.fields['phone_number'].initial = self.instance.profile.phone_number
-            if self.instance.pk: # Check if the user is saved
+            if self.instance.pk:
                 self.fields['groups'].initial = self.instance.groups.all()
-        # The supervisor can only assign users to groups they are also a member of
         if user_groups:
             self.fields['groups'].queryset = user_groups
 
@@ -94,3 +90,23 @@ class UserEditForm(forms.ModelForm):
         user.profile.phone_number = self.cleaned_data['phone_number']
         user.profile.save()
         return user
+
+class LogoUploadForm(forms.ModelForm):
+    class Meta:
+        model = Logo
+        fields = ['name', 'image']
+
+class GroupEditForm(forms.Form):
+    name = forms.CharField(max_length=150, required=True, widget=forms.TextInput(attrs={'class': 'form-control'}))
+    logo = forms.ModelChoiceField(
+        queryset=Logo.objects.all(),
+        required=False,
+        help_text="Select a logo for this group.",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+
+    def __init__(self, *args, **kwargs):
+        supervisor_logos = kwargs.pop('supervisor_logos', None)
+        super().__init__(*args, **kwargs)
+        if supervisor_logos is not None:
+            self.fields['logo'].queryset = supervisor_logos

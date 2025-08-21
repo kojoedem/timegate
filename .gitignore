@@ -111,13 +111,3 @@ dmypy.json
 
 # pytype
 .pytype/
-media/reference_images/*.jpg
-media/reference_images/*.jpeg
-media/reference_images/*.png
-media/reference_images/*.gif
-media/reference_images/*.webp
-media/reference_images/*.bmp
-media/reference_images/*.svg
-media/reference_images/*.tiff
-media/reference_images/*.ico
-ml_models/lbfmodel.yaml

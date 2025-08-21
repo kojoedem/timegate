@@ -48,6 +48,7 @@ def create_user_profile(sender, instance, created, **kwargs):
 def save_user_profile(sender, instance, **kwargs):
     instance.profile.save()
 
+
 class Attendance(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="attendances")
     clock_in = models.DateTimeField(null=True, blank=True)
@@ -58,7 +59,7 @@ class Attendance(models.Model):
     date = models.DateField(default=now)
 
     class Meta:
-        ordering = ['-clock_in']   # optional: shows latest attendance first
+        unique_together = ("user", "date")
 
     @property
     def on_break(self):

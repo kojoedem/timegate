@@ -125,3 +125,19 @@ def verify_user_face(user, image_to_verify):
         return True, "Face verified."
     else:
         return False, f"Face does not match. Confidence: {confidence}"
+
+def is_face_already_registered(image_to_check):
+    """
+    A specific wrapper around find_matching_face to check for duplicates during registration.
+    Returns (True, reason) if a duplicate is found, (False, None) otherwise.
+    """
+    user_id, confidence, reason = find_matching_face(image_to_check)
+    if user_id is not None:
+        # A match was found, so it's a duplicate.
+        return True, f"A similar face is already registered (Confidence: {confidence:.2f})"
+
+    if "No face detected" in reason:
+        return True, reason
+
+    # No matching user found, and a face was detected, so it's not a duplicate.
+    return False, None

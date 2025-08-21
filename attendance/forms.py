@@ -50,9 +50,47 @@ class GroupTimePolicyForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # If editing an existing policy, don't limit the group queryset
+        # If editing an existing policy, disable the group field as it cannot be changed.
         if self.instance and self.instance.pk:
-             self.fields['group'].queryset = Group.objects.all()
+             self.fields['group'].disabled = True
         else:
             # For new policies, only show groups that don't have one yet
             self.fields['group'].queryset = Group.objects.filter(time_policy__isnull=True)
+
+class CreateGroupForm(forms.ModelForm):
+    class Meta:
+        model = Group
+        fields = ['name']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'New Group Name'})
+        }
+
+class UserEditForm(forms.ModelForm):
+    phone_number = forms.CharField(max_length=20, required=False)
+    groups = forms.ModelMultipleChoiceField(
+        queryset=Group.objects.all(),
+        widget=forms.CheckboxSelectMultiple,
+        required=False
+    )
+
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'email', 'groups']
+
+    def __init__(self, *args, **kwargs):
+        # We need to pop 'user_groups' kwarg before calling super
+        user_groups = kwargs.pop('user_groups', None)
+        super().__init__(*args, **kwargs)
+        if self.instance:
+            self.fields['phone_number'].initial = self.instance.profile.phone_number
+            if self.instance.pk: # Check if the user is saved
+                self.fields['groups'].initial = self.instance.groups.all()
+        # The supervisor can only assign users to groups they are also a member of
+        if user_groups:
+            self.fields['groups'].queryset = user_groups
+
+    def save(self, *args, **kwargs):
+        user = super().save(*args, **kwargs)
+        user.profile.phone_number = self.cleaned_data['phone_number']
+        user.profile.save()
+        return user

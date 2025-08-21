@@ -10,6 +10,8 @@ class ProfileInline(admin.StackedInline):
     model = Profile
     can_delete = False
     verbose_name_plural = 'profile'
+    fk_name = 'user'
+    raw_id_fields = ('supervisor',)
 
 # Define a new User admin
 class UserAdmin(BaseUserAdmin):

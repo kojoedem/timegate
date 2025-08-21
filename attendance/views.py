@@ -20,9 +20,9 @@ import os
 from django.core.files.storage import default_storage
 from django.db import transaction
 
-from .models import Attendance, OfficeLocation, AllowedIP, Profile, GroupTimePolicy
+from .models import Attendance, OfficeLocation, AllowedIP, Profile, GroupTimePolicy, Logo
 from .serializers import AttendActionSerializer, AttendanceSerializer
-from .forms import UserRegistrationForm, SingleUserCreationForm, GroupTimePolicyForm, CreateGroupForm, UserEditForm
+from .forms import UserRegistrationForm, SingleUserCreationForm, GroupTimePolicyForm, CreateGroupForm, UserEditForm, LogoUploadForm, GroupEditForm
 from .utils import find_matching_face, verify_user_face, check_liveness
 
 # Helper functions
@@ -98,12 +98,24 @@ def register(request):
 # Main Dashboard/Profile View
 class UserProfileView(LoginRequiredMixin, View):
     def get(self, request):
-        context = {'attendances': Attendance.objects.filter(user=request.user).order_by('-date', '-clock_in')}
+        user_group = request.user.groups.first()
+        group_logo = None
+        if user_group and hasattr(user_group, 'time_policy'):
+            group_logo = user_group.time_policy.logo
+
+        context = {
+            'attendances': Attendance.objects.filter(user=request.user).order_by('-date', '-clock_in'),
+            'group_logo': group_logo
+        }
         if request.user.is_staff:
             supervisor_groups = request.user.groups.all()
             selected_group_id = request.GET.get('group_id')
             selected_group = supervisor_groups.filter(id=selected_group_id).first() if selected_group_id else supervisor_groups.first()
             context.update({'is_supervisor': True, 'supervisor_groups': supervisor_groups, 'selected_group': selected_group, 'create_group_form': CreateGroupForm()})
+            context.update({
+                'logo_upload_form': LogoUploadForm(),
+                'logos': Logo.objects.filter(uploaded_by=request.user)
+            })
             if selected_group:
                 context.update({
                     'group_users': User.objects.filter(groups=selected_group),
@@ -120,7 +132,8 @@ class UserProfileView(LoginRequiredMixin, View):
         handler_map = {
             'update_picture': self.handle_update_picture, 'bulk_upload': self.handle_bulk_upload,
             'add_single_user': self.handle_add_single_user, 'delete_user': self.handle_delete_user,
-            'create_group': self.handle_create_group, 'delete_time_policy': self.handle_delete_time_policy
+            'create_group': self.handle_create_group, 'delete_time_policy': self.handle_delete_time_policy,
+            'upload_logo': self.handle_logo_upload
         }
         handler = handler_map.get(action)
         if handler: handler(request)
@@ -147,10 +160,70 @@ class UserProfileView(LoginRequiredMixin, View):
         if group and request.POST.get('user_id') and request.user.id != int(request.POST.get('user_id')):
             User.objects.filter(id=request.POST.get('user_id'), groups=group).delete()
             messages.success(request, "User deleted.")
-    # Other handlers...
-    def handle_update_picture(self, request): pass
-    def handle_bulk_upload(self, request): pass
-    def handle_delete_time_policy(self, request): pass
+    def handle_update_picture(self, request):
+        new_image = request.FILES.get('reference_image')
+        if new_image:
+            request.user.profile.reference_image = new_image; request.user.profile.save()
+            messages.success(request, 'Your profile picture has been updated successfully!')
+
+    def handle_bulk_upload(self, request):
+        csv_file = request.FILES.get('csv_file')
+        group_id = request.POST.get('group_id')
+        group = Group.objects.filter(id=group_id, user=request.user).first()
+
+        if not group:
+            messages.error(request, "A valid group must be selected to upload users.")
+            return
+
+        if not csv_file or not csv_file.name.endswith('.csv'):
+            messages.error(request, 'Please upload a valid .csv file.'); return
+        try:
+            decoded_file = csv_file.read().decode('utf-8').splitlines(); reader = csv.DictReader(decoded_file)
+            created_count, errors = 0, []
+            for row in reader:
+                username = row.get('username')
+                if not username or User.objects.filter(username=username).exists():
+                    errors.append(f"Skipping user '{username}': missing or already exists."); continue
+                with transaction.atomic():
+                    user = User.objects.create_user(username=username, password=User.objects.make_random_password(), first_name=row.get('first_name', ''), last_name=row.get('last_name', ''))
+                    user.groups.add(group)
+                    user.profile.phone_number = row.get('phone_number', '')
+                    user.profile.save()
+                    created_count += 1
+            if created_count > 0: messages.success(request, f"Successfully created {created_count} new users and added to group '{group.name}'.")
+            if errors: messages.warning(request, 'Some users could not be created: ' + " ".join(errors))
+        except Exception as e: messages.error(request, f"An error occurred: {e}")
+
+    def handle_delete_time_policy(self, request):
+        if not request.user.is_staff: return
+        policy_id = request.POST.get('policy_id')
+        group_id = request.POST.get('group_id')
+        group = Group.objects.filter(id=group_id, user=request.user).first()
+
+        if not group:
+            messages.error(request, "You do not have permission to modify this group's policy.")
+            return
+
+        if policy_id:
+            try:
+                policy = GroupTimePolicy.objects.get(id=policy_id, group=group)
+                policy.delete()
+                messages.success(request, f"Time policy for group '{group.name}' has been deleted.")
+            except GroupTimePolicy.DoesNotExist:
+                messages.error(request, "The policy you tried to delete does not exist.")
+        else:
+            messages.error(request, "No policy ID provided for deletion.")
+
+    def handle_logo_upload(self, request):
+        if not request.user.is_staff: return
+        form = LogoUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            logo = form.save(commit=False)
+            logo.uploaded_by = request.user
+            logo.save()
+            messages.success(request, "Logo uploaded successfully.")
+        else:
+            messages.error(request, "Could not upload logo. The name may already exist.")
 
 class UserEditView(LoginRequiredMixin, UserPassesTestMixin, View):
     template_name = 'attendance/edit_user.html'
@@ -190,3 +263,36 @@ class PolicyEditView(LoginRequiredMixin, UserPassesTestMixin, View):
             return redirect(reverse('profile_page') + f'?group_id={group.id}')
         return render(request, self.template_name, {'form': form, 'group': group})
 class LivenessCheckView(APIView): pass # Placeholder
+
+class GroupEditView(LoginRequiredMixin, UserPassesTestMixin, View):
+    template_name = 'attendance/edit_group.html'
+
+    def test_func(self):
+        if not self.request.user.is_staff: return False
+        group = get_object_or_404(Group, id=self.kwargs['group_id'])
+        return self.request.user in group.user_set.all() or self.request.user.is_superuser
+
+    def get(self, request, group_id):
+        group = get_object_or_404(Group, id=group_id)
+        policy, _ = GroupTimePolicy.objects.get_or_create(group=group)
+        form = GroupEditForm(
+            initial={'name': group.name, 'logo': policy.logo},
+            supervisor_logos=Logo.objects.filter(uploaded_by=request.user)
+        )
+        return render(request, self.template_name, {'form': form, 'group': group})
+
+    def post(self, request, group_id):
+        group = get_object_or_404(Group, id=group_id)
+        form = GroupEditForm(request.POST, supervisor_logos=Logo.objects.filter(uploaded_by=request.user))
+        if form.is_valid():
+            group.name = form.cleaned_data['name']
+            group.save()
+
+            policy, _ = GroupTimePolicy.objects.get_or_create(group=group)
+            policy.logo = form.cleaned_data['logo']
+            policy.save()
+
+            messages.success(request, f"Successfully updated group '{group.name}'.")
+            return redirect(reverse('profile_page') + f'?group_id={group.id}')
+
+        return render(request, self.template_name, {'form': form, 'group': group})

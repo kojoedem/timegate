@@ -72,11 +72,20 @@ class Attendance(models.Model):
 
 class GroupTimePolicy(models.Model):
     group = models.OneToOneField(Group, on_delete=models.CASCADE, related_name='time_policy')
-    start_time = models.TimeField()
-    end_time = models.TimeField()
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    logo = models.ForeignKey('Logo', on_delete=models.SET_NULL, null=True, blank=True, help_text="Logo for this group.")
 
     class Meta:
         verbose_name_plural = "Group Time Policies"
 
     def __str__(self):
         return f"Time policy for {self.group.name}"
+
+class Logo(models.Model):
+    name = models.CharField(max_length=100, unique=True, help_text="A unique name for the logo.")
+    image = models.ImageField(upload_to='group_logos/')
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, help_text="Supervisor who uploaded the logo.")
+
+    def __str__(self):
+        return self.name

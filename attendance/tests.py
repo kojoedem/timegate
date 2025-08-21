@@ -7,7 +7,7 @@ from unittest.mock import patch
 from rest_framework.test import APITestCase, APIClient
 from rest_framework.authtoken.models import Token
 from rest_framework import status
-from .models import OfficeLocation, Attendance, GroupTimePolicy
+from .models import OfficeLocation, Attendance, GroupTimePolicy, Logo
 
 class AttendanceAPITests(APITestCase):
     def setUp(self):
@@ -94,3 +94,36 @@ class UserProfileViewTests(APITestCase):
         self.assertEqual(User.objects.count(), user_count + 1)
         new_user = User.objects.get(username='csvuser1')
         self.assertIn(self.group1, new_user.groups.all())
+
+    def test_supervisor_can_upload_logo(self):
+        self.client.login(username='supervisor', password='password')
+        logo_count = Logo.objects.count()
+        png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDAT\x08\xd7c`\x00\x00\x00\x02\x00\x01\xe2!\xbc\x33\x00\x00\x00\x00IEND\xaeB`\x82'
+        dummy_image = SimpleUploadedFile("logo.png", png_data, content_type="image/png")
+        data = {'action': 'upload_logo', 'name': 'Test Logo', 'image': dummy_image, 'group_id': self.group1.id}
+        response = self.client.post(reverse('profile_page'), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Logo.objects.count(), logo_count + 1)
+        new_logo = Logo.objects.get(name='Test Logo')
+        self.assertEqual(new_logo.uploaded_by, self.supervisor)
+
+    def test_supervisor_can_assign_logo_to_group(self):
+        self.client.login(username='supervisor', password='password')
+        logo = Logo.objects.create(name='My Test Logo', uploaded_by=self.supervisor)
+        data = {'name': 'New Group Name', 'logo': logo.id}
+        response = self.client.post(reverse('edit_group', kwargs={'group_id': self.group1.id}), data)
+        self.assertEqual(response.status_code, 302)
+        self.group1.refresh_from_db()
+        self.assertEqual(self.group1.time_policy.logo, logo)
+
+    def test_user_sees_group_logo(self):
+        dummy_image = SimpleUploadedFile("logo.png", b"file_content", content_type="image/png")
+        logo = Logo.objects.create(name='User Logo', uploaded_by=self.supervisor, image=dummy_image)
+        policy = GroupTimePolicy.objects.create(group=self.group1, start_time='09:00', end_time='17:00', logo=logo)
+        self.user_a.groups.add(self.group1)
+
+        self.client.login(username='user_a', password='password')
+        response = self.client.get(reverse('profile_page'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('group_logo', response.context)
+        self.assertEqual(response.context['group_logo'], logo)

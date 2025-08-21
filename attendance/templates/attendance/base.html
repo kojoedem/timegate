@@ -13,7 +13,12 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{% url 'clocking_page' %}">TimeGate</a>
+            <a class="navbar-brand" href="{% url 'profile_page' %}">
+                {% if user.is_authenticated and group_logo %}
+                    <img src="{{ group_logo.image.url }}" alt="{{ group_logo.name }} Logo" height="30" class="d-inline-block align-text-top me-2">
+                {% endif %}
+                TimeGate
+            </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>

@@ -1,0 +1,102 @@
+{% extends 'attendance/base.html' %}
+
+{% block title %}Admin Dashboard - TimeGate{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Admin Dashboard</h1>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-white bg-primary shadow">
+            <div class="card-body">
+                <h5 class="card-title">Total Users</h5>
+                <p class="card-text fs-2">{{ total_users }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-success shadow">
+            <div class="card-body">
+                <h5 class="card-title">Clocked In</h5>
+                <p id="total-clocked-in" class="card-text fs-2">{{ total_clocked_in }}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-warning shadow">
+            <div class="card-body">
+                <h5 class="card-title">On Break</h5>
+                <p id="total-on-break" class="card-text fs-2">{{ total_on_break }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attendance Report Form -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header">
+        <h3>Download Attendance Report</h3>
+    </div>
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <label for="start_date" class="form-label">Start Date</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date" required>
+                </div>
+                <div class="col-md-5">
+                    <label for="end_date" class="form-label">End Date</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date" required>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Download CSV</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk User Upload Form -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header">
+        <h3>Bulk Register New Users</h3>
+    </div>
+    <div class="card-body">
+        <form action="{% url 'bulk_register' %}" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="csv_file" class="form-label">Upload CSV File</label>
+                <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
+                <div class="form-text">CSV should have columns: username, first_name, last_name, phone_number.</div>
+            </div>
+            <button type="submit" class="btn btn-secondary">Upload and Create Users</button>
+        </form>
+    </div>
+</div>
+
+<!-- Lists of Users -->
+<div class="row">
+    <div class="col-md-6">
+        <h3>Currently Clocked In</h3>
+        <div id="clocked-in-list" class="list-group shadow-sm">
+            {% for attendance in clocked_in_users %}
+                <a href="#" id="user-{{ attendance.user.username }}" class="list-group-item list-group-item-action">{{ attendance.user.get_full_name|default:attendance.user.username }} - Clocked in at {{ attendance.clock_in|time:"H:i" }}</a>
+            {% empty %}
+                <li id="no-clocked-in" class="list-group-item">No users are currently clocked in.</li>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="col-md-6">
+        <h3>Currently On Break</h3>
+        <div id="on-break-list" class="list-group shadow-sm">
+            {% for attendance in on_break_users %}
+                <a href="#" id="user-{{ attendance.user.username }}" class="list-group-item list-group-item-action">{{ attendance.user.get_full_name|default:attendance.user.username }} - Break started at {{ attendance.break_start|time:"H:i" }}</a>
+            {% empty %}
+                <li id="no-on-break" class="list-group-item">No users are currently on break.</li>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

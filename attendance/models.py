@@ -40,12 +40,14 @@ class Profile(models.Model):
         return f'{self.user.username} Profile'
 
 @receiver(post_save, sender=User)
-def create_user_profile(sender, instance, created, **kwargs):
+def create_or_update_user_profile(sender, instance, created, **kwargs):
+    """
+    Creates a Profile for a new User, or saves the existing one.
+    This is idempotent and avoids race conditions.
+    """
     if created:
-        Profile.objects.create(user=instance)
-
-@receiver(post_save, sender=User)
-def save_user_profile(sender, instance, **kwargs):
+        Profile.objects.get_or_create(user=instance)
+    # Ensure the profile is saved on any user save
     instance.profile.save()
 
 

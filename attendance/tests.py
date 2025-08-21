@@ -124,3 +124,47 @@ class AttendanceAPITests(APITestCase):
         response = self.client.post('/api/liveness-check/', {'video_clip': dummy_video_2})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data['detail'], "Liveness check failed.")
+
+    def test_bulk_user_upload(self):
+        # Make user a staff member to perform the upload
+        self.user.is_staff = True
+        self.user.save()
+        self.client.login(username='testuser', password='testpassword')
+
+        csv_content = "username,first_name,last_name,phone_number\nuser1,fn1,ln1,111\nuser2,fn2,ln2,222"
+        csv_file = SimpleUploadedFile("users.csv", csv_content.encode('utf-8'), content_type="text/csv")
+
+        response = self.client.post('/bulk-register/', {'csv_file': csv_file})
+
+        self.assertEqual(response.status_code, 302) # Should redirect to dashboard
+        self.assertEqual(User.objects.count(), 3) # Original user + 2 new ones
+
+        # Check if one of the new users was created correctly
+        new_user = User.objects.get(username='user1')
+        self.assertEqual(new_user.profile.supervisor, self.user)
+        self.assertEqual(new_user.profile.phone_number, '111')
+
+    def test_dashboard_view_for_supervisor(self):
+        # Create a supervisor and two users
+        supervisor = self.user
+        supervisor.is_staff = True
+        supervisor.save()
+
+        user_a = User.objects.create_user(username='user_a', password='password')
+        user_b = User.objects.create_user(username='user_b', password='password')
+
+        # Assign user_a to the supervisor
+        user_a.profile.supervisor = supervisor
+        user_a.profile.save()
+
+        # Create attendance for both users
+        Attendance.objects.create(user=user_a, clock_in=now())
+        Attendance.objects.create(user=user_b, clock_in=now())
+
+        self.client.login(username='testuser', password='testpassword')
+        response = self.client.get('/admin-dashboard/')
+
+        self.assertEqual(response.status_code, 200)
+        # Supervisor should see their own user_a, but not user_b
+        self.assertContains(response, 'user_a')
+        self.assertNotContains(response, 'user_b')

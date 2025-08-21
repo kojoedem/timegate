@@ -27,6 +27,14 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     phone_number = models.CharField(max_length=15, blank=True)
     reference_image = models.ImageField(upload_to='reference_images/', null=True, blank=True)
+    supervisor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='supervised_profiles',
+        help_text="The supervisor for this user."
+    )
 
     def __str__(self):
         return f'{self.user.username} Profile'

@@ -10,6 +10,7 @@ from rest_framework.authtoken.models import Token
 from django.shortcuts import render, redirect
 from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib import messages
 from django.http import HttpResponse
 import csv
@@ -238,26 +239,44 @@ class FaceLoginView(APIView):
 class AdminDashboardView(UserPassesTestMixin, View):
     def test_func(self):
         return self.request.user.is_staff
+
+    def get_supervised_users(self, supervisor):
+        if supervisor.is_superuser:
+            return User.objects.all()
+
+        supervised_user_ids = supervisor.supervised_profiles.values_list('user__id', flat=True)
+        # Include the supervisor themselves in the list of users they can see
+        return User.objects.filter(id__in=list(supervised_user_ids) + [supervisor.id])
+
     def get(self, request):
-        clocked_in_users = Attendance.objects.filter(clock_out__isnull=True, break_start__isnull=True).select_related('user')
-        on_break_users = Attendance.objects.filter(break_start__isnull=False, break_end__isnull=True).select_related('user')
+        base_queryset = self.get_supervised_users(request.user)
+        base_user_ids = base_queryset.values_list('id', flat=True)
+
+        clocked_in_users = Attendance.objects.filter(user_id__in=base_user_ids, clock_out__isnull=True, break_start__isnull=True).select_related('user')
+        on_break_users = Attendance.objects.filter(user_id__in=base_user_ids, break_start__isnull=False, break_end__isnull=True).select_related('user')
+
         context = {
             'clocked_in_users': clocked_in_users,
             'on_break_users': on_break_users,
-            'total_users': User.objects.count(),
+            'total_users': base_queryset.count(),
             'total_clocked_in': clocked_in_users.count(),
             'total_on_break': on_break_users.count(),
         }
         return render(request, 'attendance/admin_dashboard.html', context)
+
     def post(self, request):
         start_date_str = request.POST.get('start_date')
         end_date_str = request.POST.get('end_date')
         if not start_date_str or not end_date_str:
             messages.error(request, "Please provide both a start and end date.")
             return redirect('admin_dashboard')
+
         start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
-        attendances = Attendance.objects.filter(date__range=[start_date, end_date]).order_by('user', 'date')
+
+        base_queryset = self.get_supervised_users(request.user)
+        attendances = Attendance.objects.filter(user__in=base_queryset, date__range=[start_date, end_date]).order_by('user', 'date')
+
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="attendance_report_{start_date_str}_to_{end_date_str}.csv"'
         writer = csv.writer(response)
@@ -287,3 +306,58 @@ class LivenessCheckView(APIView):
             return Response({"detail": "Liveness check passed."}, status=status.HTTP_200_OK)
         else:
             return Response({"detail": "Liveness check failed."}, status=status.HTTP_403_FORBIDDEN)
+
+
+@staff_member_required
+def bulk_register_users(request):
+    if request.method == 'POST':
+        csv_file = request.FILES.get('csv_file')
+        if not csv_file or not csv_file.name.endswith('.csv'):
+            messages.error(request, 'Please upload a valid .csv file.')
+            return redirect('admin_dashboard')
+
+        try:
+            decoded_file = csv_file.read().decode('utf-8').splitlines()
+            reader = csv.DictReader(decoded_file)
+
+            created_count = 0
+            errors = []
+
+            for row in reader:
+                username = row.get('username')
+                if not username:
+                    errors.append(f"Skipping row {reader.line_num}: missing username.")
+                    continue
+
+                if User.objects.filter(username=username).exists():
+                    errors.append(f"Skipping user '{username}': already exists.")
+                    continue
+
+                # Create user with a random password
+                password = User.objects.make_random_password()
+                user = User.objects.create_user(
+                    username=username,
+                    password=password,
+                    first_name=row.get('first_name', ''),
+                    last_name=row.get('last_name', '')
+                )
+
+                # Update profile
+                user.profile.phone_number = row.get('phone_number', '')
+                user.profile.supervisor = request.user
+                user.profile.save()
+
+                created_count += 1
+                # You might want to email the user their temporary password here
+
+            if created_count > 0:
+                messages.success(request, f'Successfully created {created_count} new users.')
+            if errors:
+                messages.warning(request, 'Some users could not be created: ' + " ".join(errors))
+
+        except Exception as e:
+            messages.error(request, f"An error occurred while processing the file: {e}")
+
+        return redirect('admin_dashboard')
+
+    return redirect('admin_dashboard')

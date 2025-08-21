@@ -58,6 +58,24 @@
     </div>
 </div>
 
+<!-- Bulk User Upload Form -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-header">
+        <h3>Bulk Register New Users</h3>
+    </div>
+    <div class="card-body">
+        <form action="{% url 'bulk_register' %}" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="csv_file" class="form-label">Upload CSV File</label>
+                <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
+                <div class="form-text">CSV should have columns: username, first_name, last_name, phone_number.</div>
+            </div>
+            <button type="submit" class="btn btn-secondary">Upload and Create Users</button>
+        </form>
+    </div>
+</div>
+
 <!-- Lists of Users -->
 <div class="row">
     <div class="col-md-6">

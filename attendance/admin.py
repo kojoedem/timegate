@@ -50,5 +50,5 @@ class AllowedIPAdmin(admin.ModelAdmin):
 
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ("user", "clock_in", "clock_out", "on_break", "total_seconds")
+    list_display = ("user", "clock_in", "clock_out", "break_start", "break_end", "total_seconds")
     list_filter = ("user", "clock_in")

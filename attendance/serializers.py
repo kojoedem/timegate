@@ -24,5 +24,5 @@ class AttendActionSerializer(serializers.Serializer):
 class AttendanceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attendance
-        fields = ["id", "user", "clock_in", "clock_out", "break_start", "break_end", "total_seconds", "on_break"]
+        fields = ["id", "user", "clock_in", "clock_out", "break_start", "break_end", "total_seconds"]
         read_only_fields = fields

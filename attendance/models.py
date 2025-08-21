@@ -58,8 +58,16 @@ class Attendance(models.Model):
         unique_together = ("user", "date")
 
     @property
-    def on_break(self):
-        return self.break_start is not None and self.break_end is None
+    def total_hours(self):
+        if self.total_seconds:
+            return self.total_seconds // 3600
+        return 0
+
+    @property
+    def total_minutes(self):
+        if self.total_seconds:
+            return (self.total_seconds % 3600) // 60
+        return 0
 
 
 class GroupTimePolicy(models.Model):

@@ -19,7 +19,7 @@
         <div class="card text-white bg-success shadow">
             <div class="card-body">
                 <h5 class="card-title">Clocked In</h5>
-                <p class="card-text fs-2">{{ total_clocked_in }}</p>
+                <p id="total-clocked-in" class="card-text fs-2">{{ total_clocked_in }}</p>
             </div>
         </div>
     </div>
@@ -27,7 +27,7 @@
         <div class="card text-white bg-warning shadow">
             <div class="card-body">
                 <h5 class="card-title">On Break</h5>
-                <p class="card-text fs-2">{{ total_on_break }}</p>
+                <p id="total-on-break" class="card-text fs-2">{{ total_on_break }}</p>
             </div>
         </div>
     </div>
@@ -62,21 +62,21 @@
 <div class="row">
     <div class="col-md-6">
         <h3>Currently Clocked In</h3>
-        <div class="list-group shadow-sm">
+        <div id="clocked-in-list" class="list-group shadow-sm">
             {% for attendance in clocked_in_users %}
-                <a href="#" class="list-group-item list-group-item-action">{{ attendance.user.get_full_name|default:attendance.user.username }} - Clocked in at {{ attendance.clock_in|time:"H:i" }}</a>
+                <a href="#" id="user-{{ attendance.user.username }}" class="list-group-item list-group-item-action">{{ attendance.user.get_full_name|default:attendance.user.username }} - Clocked in at {{ attendance.clock_in|time:"H:i" }}</a>
             {% empty %}
-                <li class="list-group-item">No users are currently clocked in.</li>
+                <li id="no-clocked-in" class="list-group-item">No users are currently clocked in.</li>
             {% endfor %}
         </div>
     </div>
     <div class="col-md-6">
         <h3>Currently On Break</h3>
-        <div class="list-group shadow-sm">
+        <div id="on-break-list" class="list-group shadow-sm">
             {% for attendance in on_break_users %}
-                <a href="#" class="list-group-item list-group-item-action">{{ attendance.user.get_full_name|default:attendance.user.username }} - Break started at {{ attendance.break_start|time:"H:i" }}</a>
+                <a href="#" id="user-{{ attendance.user.username }}" class="list-group-item list-group-item-action">{{ attendance.user.get_full_name|default:attendance.user.username }} - Break started at {{ attendance.break_start|time:"H:i" }}</a>
             {% empty %}
-                <li class="list-group-item">No users are currently on break.</li>
+                <li id="no-on-break" class="list-group-item">No users are currently on break.</li>
             {% endfor %}
         </div>
     </div>

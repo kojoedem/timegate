@@ -56,25 +56,13 @@ class AttendanceAPITests(APITestCase):
 
     @patch('attendance.views.verify_user_face')
     def test_clock_out_success(self, mock_verify_face):
-        # Configure the mock to simulate successful face verification
         mock_verify_face.return_value = (True, "Face verified.")
-
         Attendance.objects.create(user=self.user, clock_in=now())
-
-        # We need to send a dummy face capture to pass the serializer
         dummy_face_capture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-        data = {
-            'latitude': 5.6037,
-            'longitude': -0.1870,
-            'face_capture': dummy_face_capture
-        }
-
+        data = {'latitude': 5.6037, 'longitude': -0.1870, 'face_capture': dummy_face_capture}
         response = self.client.post('/api/clock-out/', data, format='json')
-
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(Attendance.objects.get().clock_out)
-
-        # Check that the token was deleted
         self.assertFalse(Token.objects.filter(user=self.user).exists())
 
     def test_clock_out_not_clocked_in(self):
@@ -89,101 +77,50 @@ class AttendanceAPITests(APITestCase):
         self.assertEqual(response.data['user'], self.user.id)
 
     def test_admin_dashboard_csv_export(self):
-        # Make user a staff member to access the dashboard
         self.user.is_staff = True
         self.user.save()
-
-        # Log in the staff user for the web view.
-        # Note: APITestCase client doesn't handle sessions well for non-API views.
-        # For a simple GET this is fine, but for POST we might need force_login.
-        # However, the view is simple, so this should work.
         self.client.login(username='testuser', password='testpassword')
-
-        # Create some attendance data
         clock_in_time = now()
         clock_out_time = clock_in_time + datetime.timedelta(hours=8)
-        Attendance.objects.create(
-            user=self.user,
-            clock_in=clock_in_time,
-            clock_out=clock_out_time,
-            total_seconds=8*3600,
-            date=clock_in_time.date()
-        )
-
+        Attendance.objects.create(user=self.user, clock_in=clock_in_time, clock_out=clock_out_time, total_seconds=8*3600, date=clock_in_time.date())
         start_date = now().date()
         end_date = now().date()
-
-        response = self.client.post('/admin-dashboard/', {
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d')
-        })
-
+        response = self.client.post('/admin-dashboard/', {'start_date': start_date.strftime('%Y-%m-%d'),'end_date': end_date.strftime('%Y-%m-%d')})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'text/csv')
         self.assertIn('attachment; filename=', response['Content-Disposition'])
-
-        # Check the content of the CSV
         content = response.content.decode('utf-8')
         self.assertIn('User,Date,Clock In,Clock Out,Total Hours', content)
         self.assertIn(self.user.username, content)
-        self.assertIn('8.0', content) # Check for the calculated hours
+        self.assertIn('8.0', content)
 
     @patch('attendance.forms.find_matching_face')
     def test_registration_duplicate_face(self, mock_find_face):
-        # Scenario 1: Duplicate face is found
-        mock_find_face.return_value = (1, 0.5, "Match found.") # Simulate finding a match
-
-        # Create a tiny, valid PNG image for upload
+        mock_find_face.return_value = (1, 0.5, "Match found.")
         png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDAT\x08\xd7c`\x00\x00\x00\x02\x00\x01\xe2!\xbc\x33\x00\x00\x00\x00IEND\xaeB`\x82'
         dummy_image = SimpleUploadedFile("face.png", png_data, content_type="image/png")
-
-        data = {
-            'username': 'newuser',
-            'password': 'newpassword',
-            'first_name': 'New',
-            'last_name': 'User',
-            'phone_number': '1234567890',
-            'reference_image': dummy_image
-        }
-
+        data = {'username': 'newuser','password': 'newpassword','first_name': 'New','last_name': 'User','phone_number': '1234567890','reference_image': dummy_image}
         response = self.client.post('/register/', data)
-
-        self.assertEqual(response.status_code, 200) # Should re-render the form
+        self.assertEqual(response.status_code, 200)
         self.assertContains(response, "This face appears to be already registered to another user.")
-        self.assertEqual(User.objects.count(), 1) # No new user should be created
-
-        # Scenario 2: No duplicate face is found
+        self.assertEqual(User.objects.count(), 1)
         mock_find_face.return_value = (None, None, "No match found.")
-
-        # We need a new dummy image object for the second request
         dummy_image_2 = SimpleUploadedFile("face2.png", png_data, content_type="image/png")
         data['reference_image'] = dummy_image_2
-
         response = self.client.post('/register/', data)
-
-        self.assertEqual(response.status_code, 302) # Should redirect on success
-        self.assertEqual(User.objects.count(), 2) # New user should be created
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(User.objects.count(), 2)
 
     @patch('attendance.views.check_liveness')
     def test_liveness_check_view(self, mock_check_liveness):
-        # Scenario 1: Liveness check passes
         mock_check_liveness.return_value = True
-
         dummy_video = SimpleUploadedFile("video.webm", b"video_content", content_type="video/webm")
-
-        # This view doesn't require auth, so we don't need to log in
-        # We also need to clear the credentials set in setUp if we want to test as an anonymous user
         self.client.credentials()
         response = self.client.post('/api/liveness-check/', {'video_clip': dummy_video})
-
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['detail'], "Liveness check passed.")
-
-        # Scenario 2: Liveness check fails
         mock_check_liveness.return_value = False
-
         dummy_video_2 = SimpleUploadedFile("video2.webm", b"video_content_2", content_type="video/webm")
         response = self.client.post('/api/liveness-check/', {'video_clip': dummy_video_2})
-
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data['detail'], "Liveness check failed.")

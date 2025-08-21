@@ -120,3 +120,4 @@ media/reference_images/*.bmp
 media/reference_images/*.svg
 media/reference_images/*.tiff
 media/reference_images/*.ico
+ml_models/lbfmodel.yaml

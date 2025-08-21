@@ -14,13 +14,13 @@ from django.contrib import messages
 from django.http import HttpResponse
 import csv
 import datetime
+import os
+from django.core.files.storage import default_storage
 
 from .models import Attendance, OfficeLocation, AllowedIP, Profile, GroupTimePolicy
 from .serializers import AttendActionSerializer, AttendanceSerializer
 from .forms import UserRegistrationForm
 from .utils import find_matching_face, verify_user_face, check_liveness
-import os
-from django.core.files.storage import default_storage
 
 
 def haversine_m(lat1, lon1, lat2, lon2):
@@ -273,28 +273,17 @@ class AdminDashboardView(UserPassesTestMixin, View):
             ])
         return response
 
-
 class LivenessCheckView(APIView):
     permission_classes = [permissions.AllowAny]
-
     def post(self, request, *args, **kwargs):
         video_file = request.FILES.get('video_clip')
         if not video_file:
             return Response({"detail": "No video clip provided."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Save the video file temporarily
         file_name = default_storage.save(f"tmp/{video_file.name}", video_file)
         video_path = default_storage.path(file_name)
-
-        # Check for liveness
         is_live = check_liveness(video_path)
-
-        # Clean up the temporary file
         default_storage.delete(file_name)
-
         if is_live:
-            # In a real implementation, we would proceed to face recognition here
-            # using a frame from the video. For now, we just confirm liveness.
             return Response({"detail": "Liveness check passed."}, status=status.HTTP_200_OK)
         else:
             return Response({"detail": "Liveness check failed."}, status=status.HTTP_403_FORBIDDEN)

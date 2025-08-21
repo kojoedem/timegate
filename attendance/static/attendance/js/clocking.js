@@ -210,12 +210,12 @@ document.addEventListener("DOMContentLoaded", () => {
             navigator.geolocation.getCurrentPosition(pos => {
                 makeRequest("clock-out", { latitude: pos.coords.latitude, longitude: pos.coords.longitude, face_capture: imageData })
                 .then(() => {
+                    // Clear all session state
                     localStorage.removeItem('authToken');
                     localStorage.removeItem('username');
                     localStorage.removeItem('clockInTime');
-                    authToken = null;
-                    stopCamera();
-                    showLoggedOutState();
+                    // Force a page reload to ensure a clean state
+                    location.reload();
                 }).catch(err => {
                     showNotification("Clock-out failed. Please try again.", "danger");
                     document.getElementById('clocking-controls').style.display = 'block';

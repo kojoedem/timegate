@@ -2,6 +2,7 @@ from math import radians, sin, cos, sqrt, atan2
 import cv2
 import numpy as np
 from django.contrib.auth.models import User
+from django.contrib.auth import login, logout
 from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -137,6 +138,7 @@ class ClockOutView(APIView):
         att.total_seconds = max(total, 0)
         att.save()
         request.user.auth_token.delete()
+        logout(request)
         return Response(AttendanceSerializer(att).data)
 
 class TodayStatusView(APIView):
@@ -188,6 +190,8 @@ class FaceLoginView(APIView):
             try:
                 user = User.objects.get(id=user_id)
                 token, created = Token.objects.get_or_create(user=user)
+                # Log the user into the session framework
+                login(request, user)
                 return Response({'token': token.key, 'username': user.username})
             except User.DoesNotExist:
                 return Response({"detail": "Identified user not found."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

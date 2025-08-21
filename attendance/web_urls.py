@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 from .views import register, clocking_page, UserProfileView, AdminDashboardView
 
 urlpatterns = [
@@ -6,4 +6,5 @@ urlpatterns = [
     path("register/", register, name="register"),
     path("profile/", UserProfileView.as_view(), name="profile_page"),
     path("admin-dashboard/", AdminDashboardView.as_view(), name="admin_dashboard"),
+   
 ]

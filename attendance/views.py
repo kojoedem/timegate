@@ -57,29 +57,26 @@ def get_open_attendance(user):
 
 class ClockInView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def post(self, request):
         serializer = AttendActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
-        user = request.user
-        current_time = now().time()
-        user_groups = user.groups.all()
-        if user_groups:
-            group = user_groups.first()
-            if hasattr(group, 'time_policy'):
-                policy = group.time_policy
-                if not (policy.start_time <= current_time <= policy.end_time):
-                    return Response(
-                        {"detail": f"Clock-in denied. Your group can only clock in between {policy.start_time.strftime('%H:%M')} and {policy.end_time.strftime('%H:%M')}."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
+
+        # Check location
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
             return Response({"detail": f"Clock-in denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
-        open_att = get_open_attendance(request.user)
+
+        # Prevent multiple open sessions
+        open_att = Attendance.objects.filter(user=request.user, clock_out__isnull=True).first()
         if open_att:
-            return Response({"detail": "You already have an active session."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "You already have an active session. Please clock out first."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Create new attendance record
         att = Attendance.objects.create(user=request.user, clock_in=now())
         return Response(AttendanceSerializer(att).data, status=status.HTTP_201_CREATED)
 
@@ -110,33 +107,79 @@ class BreakEndView(APIView):
         att.save()
         return Response(AttendanceSerializer(att).data)
 
+# class ClockOutView(APIView):
+#     permission_classes = [permissions.IsAuthenticated]
+#     def post(self, request):
+#         att = get_open_attendance(request.user)
+#         if not att:
+#             return Response({"detail": "No active session to clock out."}, status=status.HTTP_400_BAD_REQUEST)
+#         serializer = AttendActionSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         lat = serializer.validated_data.get("latitude")
+#         lon = serializer.validated_data.get("longitude")
+#         face_capture = serializer.validated_data.get("face_capture")
+#         if not face_capture:
+#             return Response({"detail": "Face capture is required for clock-out."}, status=status.HTTP_400_BAD_REQUEST)
+#         verified, reason = verify_user_face(request.user, face_capture)
+#         if not verified:
+#             return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
+#         allowed, reason = location_allowed(request, lat, lon)
+#         if not allowed:
+#             return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
+#         att.clock_out = now()
+#         total = int((att.clock_out - att.clock_in).total_seconds())
+#         if att.break_start and att.break_end and att.break_end > att.break_start:
+#             total -= int((att.break_end - att.break_start).total_seconds())
+#         att.total_seconds = max(total, 0)
+#         att.save()
+#         request.user.auth_token.delete()
+#         return Response(AttendanceSerializer(att).data)
 class ClockOutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+
     def post(self, request):
-        att = get_open_attendance(request.user)
+        # Find latest open session
+        att = Attendance.objects.filter(
+            user=request.user,
+            clock_out__isnull=True
+        ).order_by("-clock_in").first()
+
         if not att:
             return Response({"detail": "No active session to clock out."}, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = AttendActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
         lat = serializer.validated_data.get("latitude")
         lon = serializer.validated_data.get("longitude")
         face_capture = serializer.validated_data.get("face_capture")
+
+        # Require face capture
         if not face_capture:
             return Response({"detail": "Face capture is required for clock-out."}, status=status.HTTP_400_BAD_REQUEST)
+
         verified, reason = verify_user_face(request.user, face_capture)
         if not verified:
             return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Location check
         allowed, reason = location_allowed(request, lat, lon)
         if not allowed:
             return Response({"detail": f"Clock-out denied: {reason}"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Close session
         att.clock_out = now()
+
+        # Compute total worked time
         total = int((att.clock_out - att.clock_in).total_seconds())
         if att.break_start and att.break_end and att.break_end > att.break_start:
             total -= int((att.break_end - att.break_start).total_seconds())
         att.total_seconds = max(total, 0)
+
         att.save()
-        request.user.auth_token.delete()
-        return Response(AttendanceSerializer(att).data)
+
+        return Response(AttendanceSerializer(att).data, status=status.HTTP_200_OK)
+
 
 class TodayStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]

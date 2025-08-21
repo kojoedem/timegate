@@ -1,5 +1,5 @@
 
-from django.urls import path
+from django.urls import include, path
 from .views import ClockInView, BreakStartView, BreakEndView, ClockOutView, TodayStatusView, FaceLoginView, LivenessCheckView
 
 urlpatterns = [
@@ -10,6 +10,7 @@ urlpatterns = [
     path("break-end/", BreakEndView.as_view(), name="break-end"),
     path("clock-out/", ClockOutView.as_view(), name="clock-out"),
     path("today/", TodayStatusView.as_view(), name="today-status"),
+     path("accounts/", include("django.contrib.auth.urls")),
 ]
 
 

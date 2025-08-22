@@ -1,43 +1,52 @@
+# TimeGate ⏳🔐  
 
-# TimeGate – Open-source Location-restricted Clocking (Django + DRF)
+TimeGate is a **secure identity verification and attendance tracking system** that leverages **facial recognition, geolocation, and API integrations** to provide seamless authentication.  
 
-This is a **starter code** for your universal clocking system. It supports:
-- Clock In / Break Start / Break End / Clock Out
-- Geofencing via GPS (lat/lon) and/or Office IP whitelist
-- Token-based auth
-- Simple, SQLite by default
+## 🚀 Features  
+- **Face Verification:** Users clock in/out or log in by scanning their face with the device camera.  
+- **Geo-fencing:** Login and Wi-Fi access restricted within a defined GPS radius for extra security.  
+- **Clocking System:**  
+  - Automatic clock-in when face verification succeeds  
+  - Clock-out and break management (requires camera verification again to prevent impersonation)  
+- **Wi-Fi Hotspot Authentication (MikroTik API Integration):**  
+  - First implementation connects TimeGate with MikroTik Hotspot for Wi-Fi authorization  
+  - Users must verify with camera before gaining access to Wi-Fi  
+- **Public API Ready:** Can be extended to verify users across multiple services (remote work apps, office systems, etc.)  
 
-## Quickstart
+## 🛠️ Tech Stack  
+- **Frontend:** Web app with camera access  
+- **Backend:** Python / FastAPI (planned)  
+- **Database:** PostgreSQL / SQLite (for initial testing)  
+- **Networking:** MikroTik API integration for hotspot verification  
 
+## 📌 Use Cases  
+- Employee attendance tracking  
+- Remote worker verification  
+- Public Wi-Fi authentication  
+- Event access control  
+
+## 🌍 Vision  
+TimeGate aims to become a **universal web-based verification platform** that organizations and developers can plug into their systems for secure, location-aware, camera-based authentication.  
+
+## 📦 Installation (Development)  
 ```bash
-# 1) Create and activate a virtualenv (recommended)
-python3 -m venv .venv && source .venv/bin/activate
+# Clone repository
+git clone https://github.com/kojoedem/timegate.git
+cd timegate
 
-# 2) Install deps
+# Install dependencies (example if using Python/FastAPI)
 pip install -r requirements.txt
 
-# 3) Setup Django
-python manage.py migrate
-python manage.py createsuperuser
-
-# 4) Get an API token
-# Log into Django admin at http://127.0.0.1:8000/admin and create a token for your user
-# (or use DRF authtoken endpoint if you add it later)
-
-# 5) Run server
-python manage.py runserver
-
-# 6) Create an Office Location in admin
-# - name, latitude, longitude, allowed_radius (e.g., 50 meters)
-# Optionally add AllowedIP entries
-
-# Example requests (use your token)
-curl -X POST http://127.0.0.1:8000/api/clock-in/   -H "Authorization: Token YOUR_TOKEN"   -H "Content-Type: application/json"   -d '{"latitude": 5.6037, "longitude": -0.1870}'
-
-curl -X POST http://127.0.0.1:8000/api/break-start/ -H "Authorization: Token YOUR_TOKEN"
-curl -X POST http://127.0.0.1:8000/api/break-end/   -H "Authorization: Token YOUR_TOKEN"
-curl -X POST http://127.0.0.1:8000/api/clock-out/   -H "Authorization: Token YOUR_TOKEN"
+# Run app
+uvicorn main:app --reload
 ```
 
-## Moving to FastAPI later
-You can keep the same database schema and build a FastAPI service that reads/writes the `attendance` tables.
+## 🗺️ Roadmap  
+- [x] Clocking system with camera verification  
+- [ ] Geo-fencing support  
+- [ ] MikroTik Wi-Fi authentication  
+- [ ] Public API release  
+- [ ] Dashboard for admins  
+
+## 📄 License  
+MIT License – free to use and modify.  
